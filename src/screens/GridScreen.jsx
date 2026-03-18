@@ -331,7 +331,6 @@ export default function GridScreen({ sheet, onBack, onUpgrade }) {
                                                                                             )}
                                                                                               </div>
                                                                                               )}
-        )}
 
         {/* Row count */}
         <div className="flex items-center justify-between mt-2">
