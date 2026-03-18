@@ -14,7 +14,9 @@
     "dexie": "^4.3.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "tailwindcss": "^4.2.1"
+    "tailwindcss": "^4.2.1",
+    "vite-plugin-pwa": "^1.2.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
