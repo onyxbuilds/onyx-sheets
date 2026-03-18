@@ -350,10 +350,10 @@ export default function GridScreen({ sheet, onBack, onUpgrade }) {
       </div>
 
       {/* Grid */}
-      <div className="flex-1 overflow-auto hide-scrollbar">
+      <div className="flex-1 overflow-auto hide-scrollbar relative">
         <table className="border-collapse" style={{ minWidth: '100%' }}>
-          <thead>
-            <tr className={`${gridHeaderBg} border-b ${cellBorder}`}>
+          <thead className="sticky top-0 z-20">
+              <tr className={`${gridHeaderBg} border-b ${cellBorder}`}>
               {/* Row number header */}
               <th className={`${subtext} text-xs px-3 py-3 text-left sticky left-0 ${gridHeaderBg} z-10`}
                 style={{ minWidth: '48px' }}>
@@ -454,9 +454,10 @@ export default function GridScreen({ sheet, onBack, onUpgrade }) {
                       style={{ minWidth: '140px' }}
                     >
                       {isActive ? (
-                        <input
-                          autoFocus
-                          type={col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text'}
+  <input
+    autoFocus
+    type="text"
+    inputMode={activeCellValue.startsWith('=') ? 'text' : col.type === 'number' ? 'decimal' : 'text'}
                           value={activeCellValue}
                           onChange={e => setActiveCellValue(e.target.value)}
                           onBlur={saveCell}
