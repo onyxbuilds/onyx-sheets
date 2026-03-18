@@ -116,7 +116,7 @@ export async function getRows(sheetId) {
   const rows = await db.rows
     .where('sheetId')
     .equals(sheetId)
-    .sortBy('position')
+    .sortBy('createdAt')
 
   // Attach cells to each row
   for (const row of rows) {
