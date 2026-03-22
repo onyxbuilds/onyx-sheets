@@ -106,8 +106,8 @@ export default function GridScreen({ sheet, onBack, onUpgrade }) {
     if (!hasData) return
 
     await createRow(sheet.id, formData)
-    await loadData()
-    setFormData({})
+setFormData({})
+await loadData()
   }
 
   async function handleDeleteRow(rowId) {
@@ -372,7 +372,9 @@ export default function GridScreen({ sheet, onBack, onUpgrade }) {
                       onClick={() => handleSort(col.id)}
                       className="flex items-center gap-1 flex-1 text-left"
                     >
-                      <span className={text}>{col.name}</span>
+                      <span className={text}>
+  {String.fromCharCode(65 + columns.indexOf(col))} — {col.name}
+</span>
                       <span className={subtext}>
                         {col.type === 'number' ? '123' : col.type === 'date' ? '📅' : 'Aa'}
                       </span>
@@ -456,8 +458,8 @@ export default function GridScreen({ sheet, onBack, onUpgrade }) {
                       {isActive ? (
   <input
     autoFocus
-    type="text"
-    inputMode="text"
+    type={!activeCellValue.startsWith('=') && col.type === 'date' ? 'date' : 'text'}
+inputMode={activeCellValue.startsWith('=') ? 'text' : col.type === 'number' ? 'decimal' : 'text'}
                           value={activeCellValue}
                           onChange={e => setActiveCellValue(e.target.value)}
                           onBlur={saveCell}

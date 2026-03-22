@@ -91,27 +91,10 @@ export async function deleteColumn(columnId, sheetId) {
 // ── ROW OPERATIONS ────────────────────────────────────────
 
 export async function createRow(sheetId, cellData) {
+    return await db.rows.add({ sheetId, ...cellData });
+    }
+ 
   // Count existing rows to set position
-  const count = await db.rows.where('sheetId').equals(sheetId).count()
-
-  const rowId = await db.rows.add({
-    sheetId,
-    position: count,
-    createdAt: Date.now()
-  })
-
-  // Create a cell for each column value
-  for (const [columnId, value] of Object.entries(cellData)) {
-    await db.cells.add({
-      rowId,
-      columnId: Number(columnId),
-      value: String(value)
-    })
-  }
-
-  return rowId
-}
-
 export async function getRows(sheetId) {
   const rows = await db.rows
     .where('sheetId')

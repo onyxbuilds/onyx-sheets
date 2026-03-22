@@ -1,81 +1,310 @@
 <!DOCTYPE html>
 <html>
-<head><title>Onyx Icon Generator</title></head>
-<body style="background:#000;display:flex;flex-direction:column;align-items:center;padding:20px;gap:20px">
+<head>
+<title>Onyx Icon Generator</title>
+<style>
+  body { background: #0a0a0a; display: flex; flex-direction: column; align-items: center; padding: 20px; gap: 24px; font-family: system-ui; color: white; }
+  .row { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+  .option { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .label { font-size: 13px; color: #888; text-align: center; }
+  .btn { padding: 10px 20px; background: #4f46e5; color: white; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; margin-top: 4px; }
+  .btn:active { background: #3730a3; }
+  h2 { color: #6366f1; margin: 0; font-size: 16px; }
+</style>
+</head>
+<body>
 
-<canvas id="c192" width="192" height="192"></canvas>
-<canvas id="c512" width="512" height="512"></canvas>
+<h1 style="font-size:20px;margin-bottom:0">Onyx Icon Options</h1>
+<p style="color:#666;font-size:13px;margin-top:4px">Tap Download on the one you want</p>
 
-<button onclick="download('c192','pwa-192x192.png')" 
-  style="padding:12px 24px;background:#4f46e5;color:white;border:none;border-radius:8px;font-size:16px;cursor:pointer">
-  Download 192x192
-</button>
+<div class="row">
+  <div class="option">
+    <h2>Option A</h2>
+    <p class="label">Hexagon — Sharp & Premium</p>
+    <canvas id="a" width="192" height="192"></canvas>
+    <button class="btn" onclick="download('a','pwa-192x192.png')">Download A</button>
+  </div>
 
-<button onclick="download('c512','pwa-512x512.png')"
-  style="padding:12px 24px;background:#4f46e5;color:white;border:none;border-radius:8px;font-size:16px;cursor:pointer">
-  Download 512x512
-</button>
+  <div class="option">
+    <h2>Option B</h2>
+    <p class="label">Geometric Minimal</p>
+    <canvas id="b" width="192" height="192"></canvas>
+    <button class="btn" onclick="download('b','pwa-192x192.png')">Download B</button>
+  </div>
+
+  <div class="option">
+    <h2>Option C</h2>
+    <p class="label">Data / Grid Symbol</p>
+    <canvas id="c" width="192" height="192"></canvas>
+    <button class="btn" onclick="download('c','pwa-192x192.png')">Download C</button>
+  </div>
+
+  <div class="option">
+    <h2>Option D</h2>
+    <p class="label">Typographic O</p>
+    <canvas id="d" width="192" height="192"></canvas>
+    <button class="btn" onclick="download('d','pwa-192x192.png')">Download D</button>
+  </div>
+</div>
 
 <script>
-function drawIcon(canvasId, size) {
-  const canvas = document.getElementById(canvasId)
-  const ctx = canvas.getContext('2d')
-  const r = size * 0.22
-
-  // Background
-  const grad = ctx.createLinearGradient(0, 0, size, size)
-  grad.addColorStop(0, '#312e81')
-  grad.addColorStop(1, '#1e1b4b')
-  ctx.fillStyle = grad
-
-  // Rounded rectangle
+function roundRect(ctx, size, radius, fillStyle) {
   ctx.beginPath()
-  ctx.moveTo(r, 0)
-  ctx.lineTo(size - r, 0)
-  ctx.quadraticCurveTo(size, 0, size, r)
-  ctx.lineTo(size, size - r)
-  ctx.quadraticCurveTo(size, size, size - r, size)
-  ctx.lineTo(r, size)
-  ctx.quadraticCurveTo(0, size, 0, size - r)
-  ctx.lineTo(0, r)
-  ctx.quadraticCurveTo(0, 0, r, 0)
+  ctx.moveTo(radius, 0)
+  ctx.lineTo(size - radius, 0)
+  ctx.quadraticCurveTo(size, 0, size, radius)
+  ctx.lineTo(size, size - radius)
+  ctx.quadraticCurveTo(size, size, size - radius, size)
+  ctx.lineTo(radius, size)
+  ctx.quadraticCurveTo(0, size, 0, size - radius)
+  ctx.lineTo(0, radius)
+  ctx.quadraticCurveTo(0, 0, radius, 0)
   ctx.closePath()
+  ctx.fillStyle = fillStyle
   ctx.fill()
+}
 
-  // Hexagon shape
+// ── OPTION A — Sharp Premium Hexagon ─────────────────────
+function drawA(id, size) {
+  const canvas = document.getElementById(id)
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const r = size * 0.18
+
+  // Deep black background
+  roundRect(ctx, size, r, '#0a0a0a')
+
+  // Subtle gradient overlay
+  const grad = ctx.createRadialGradient(size*0.35, size*0.3, 0, size*0.5, size*0.5, size*0.7)
+  grad.addColorStop(0, 'rgba(99,102,241,0.3)')
+  grad.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, size, size)
+
   const cx = size / 2
   const cy = size / 2
-  const hr = size * 0.32
+
+  // Outer hexagon — thin bright stroke
   ctx.beginPath()
   for (let i = 0; i < 6; i++) {
     const angle = (Math.PI / 180) * (60 * i - 30)
+    const hr = size * 0.36
     const x = cx + hr * Math.cos(angle)
     const y = cy + hr * Math.sin(angle)
     i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
   }
   ctx.closePath()
-  ctx.strokeStyle = '#818cf8'
-  ctx.lineWidth = size * 0.04
+  ctx.strokeStyle = '#6366f1'
+  ctx.lineWidth = size * 0.025
   ctx.stroke()
 
-  // Inner O letter
-  ctx.font = `bold ${size * 0.38}px -apple-system, sans-serif`
+  // Inner hexagon — filled indigo
+  ctx.beginPath()
+  for (let i = 0; i < 6; i++) {
+    const angle = (Math.PI / 180) * (60 * i - 30)
+    const hr = size * 0.22
+    const x = cx + hr * Math.cos(angle)
+    const y = cy + hr * Math.sin(angle)
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+  }
+  ctx.closePath()
+  ctx.fillStyle = '#4f46e5'
+  ctx.fill()
+
+  // O letter
+  ctx.font = `bold ${size * 0.22}px -apple-system, sans-serif`
   ctx.fillStyle = '#ffffff'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText('O', cx, cy + size * 0.02)
+  ctx.fillText('O', cx, cy + size * 0.01)
 }
 
-function download(canvasId, filename) {
-  const canvas = document.getElementById(canvasId)
+// ── OPTION B — Geometric Minimal ─────────────────────────
+function drawB(id, size) {
+  const canvas = document.getElementById(id)
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const r = size * 0.22
+
+  // Gradient background
+  const grad = ctx.createLinearGradient(0, 0, size, size)
+  grad.addColorStop(0, '#1e1b4b')
+  grad.addColorStop(1, '#0f172a')
+  roundRect(ctx, size, r, grad)
+  ctx.fillStyle = grad
+  ctx.fill()
+
+  const cx = size / 2
+  const cy = size / 2
+  const s = size * 0.28
+
+  // Diamond shape
+  ctx.beginPath()
+  ctx.moveTo(cx, cy - s)
+  ctx.lineTo(cx + s, cy)
+  ctx.lineTo(cx, cy + s)
+  ctx.lineTo(cx - s, cy)
+  ctx.closePath()
+  ctx.strokeStyle = '#818cf8'
+  ctx.lineWidth = size * 0.03
+  ctx.stroke()
+
+  // Inner diamond filled
+  const s2 = size * 0.14
+  ctx.beginPath()
+  ctx.moveTo(cx, cy - s2)
+  ctx.lineTo(cx + s2, cy)
+  ctx.lineTo(cx, cy + s2)
+  ctx.lineTo(cx - s2, cy)
+  ctx.closePath()
+  ctx.fillStyle = '#6366f1'
+  ctx.fill()
+
+  // Dot in center
+  ctx.beginPath()
+  ctx.arc(cx, cy, size * 0.04, 0, Math.PI * 2)
+  ctx.fillStyle = '#ffffff'
+  ctx.fill()
+}
+
+// ── OPTION C — Data Grid Symbol ───────────────────────────
+function drawC(id, size) {
+  const canvas = document.getElementById(id)
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const r = size * 0.2
+
+  // Dark background
+  const grad = ctx.createLinearGradient(0, 0, size, size)
+  grad.addColorStop(0, '#0f172a')
+  grad.addColorStop(1, '#1e1b4b')
+  roundRect(ctx, size, r, grad)
+  ctx.fillStyle = grad
+  ctx.fill()
+
+  // Grid lines
+  const margin = size * 0.2
+  const cols = 3
+  const rows = 3
+  const cellW = (size - margin * 2) / cols
+  const cellH = (size - margin * 2) / rows
+
+  ctx.strokeStyle = 'rgba(99,102,241,0.4)'
+  ctx.lineWidth = size * 0.015
+
+  // Vertical lines
+  for (let i = 0; i <= cols; i++) {
+    const x = margin + i * cellW
+    ctx.beginPath()
+    ctx.moveTo(x, margin)
+    ctx.lineTo(x, size - margin)
+    ctx.stroke()
+  }
+
+  // Horizontal lines
+  for (let i = 0; i <= rows; i++) {
+    const y = margin + i * cellH
+    ctx.beginPath()
+    ctx.moveTo(margin, y)
+    ctx.lineTo(size - margin, y)
+    ctx.stroke()
+  }
+
+  // Header row highlight
+  ctx.fillStyle = 'rgba(99,102,241,0.5)'
+  ctx.fillRect(margin, margin, size - margin * 2, cellH)
+
+  // First column highlight
+  ctx.fillStyle = 'rgba(99,102,241,0.25)'
+  ctx.fillRect(margin, margin + cellH, cellW, (size - margin * 2) - cellH)
+
+  // Accent cells
+  ctx.fillStyle = '#6366f1'
+  ctx.fillRect(margin + cellW + size*0.01, margin + cellH + size*0.01, cellW - size*0.02, cellH - size*0.02)
+
+  ctx.fillStyle = 'rgba(99,102,241,0.5)'
+  ctx.fillRect(margin + cellW*2 + size*0.01, margin + cellH*2 + size*0.01, cellW - size*0.02, cellH - size*0.02)
+}
+
+// ── OPTION D — Typographic O ──────────────────────────────
+function drawD(id, size) {
+  const canvas = document.getElementById(id)
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const r = size * 0.22
+
+  // Pure black
+  roundRect(ctx, size, r, '#000000')
+  ctx.fillStyle = '#000000'
+  ctx.fill()
+
+  const cx = size / 2
+  const cy = size / 2
+
+  // Outer ring
+  ctx.beginPath()
+  ctx.arc(cx, cy, size * 0.36, 0, Math.PI * 2)
+  ctx.strokeStyle = '#4f46e5'
+  ctx.lineWidth = size * 0.06
+  ctx.stroke()
+
+  // Inner ring — thinner, lighter
+  ctx.beginPath()
+  ctx.arc(cx, cy, size * 0.22, 0, Math.PI * 2)
+  ctx.strokeStyle = '#818cf8'
+  ctx.lineWidth = size * 0.025
+  ctx.stroke()
+
+  // Small accent dot at top
+  ctx.beginPath()
+  ctx.arc(cx, cy - size * 0.36, size * 0.04, 0, Math.PI * 2)
+  ctx.fillStyle = '#a5b4fc'
+  ctx.fill()
+}
+
+// Draw all at 192
+drawA('a', 192)
+drawB('b', 192)
+drawC('c', 192)
+drawD('d', 192)
+
+function download(id, filename) {
+  // Download 192
+  const canvas = document.getElementById(id)
   const link = document.createElement('a')
-  link.download = filename
+  link.download = 'pwa-192x192.png'
   link.href = canvas.toDataURL('image/png')
   link.click()
-}
 
-drawIcon('c192', 192)
-drawIcon('c512', 512)
+  // Draw and download 512
+  setTimeout(() => {
+    const big = document.createElement('canvas')
+    big.width = 512
+    big.height = 512
+    big.id = 'temp512'
+    document.body.appendChild(big)
+    if (id === 'a') drawA('temp512', 512)
+    else if (id === 'b') drawB('temp512', 512)
+    else if (id === 'c') drawC('temp512', 512)
+    else if (id === 'd') drawD('temp512', 512)
+    const link2 = document.createElement('a')
+    link2.download = 'pwa-512x512.png'
+    link2.href = big.toDataURL('image/png')
+    link2.click()
+    document.body.removeChild(big)
+  }, 500)
+}
 </script>
+
+<!-- Hidden canvases for 512px versions -->
+<canvas id="a_big" width="512" height="512" style="display:none"></canvas>
+<canvas id="b_big" width="512" height="512" style="display:none"></canvas>
+<canvas id="c_big" width="512" height="512" style="display:none"></canvas>
+<canvas id="d_big" width="512" height="512" style="display:none"></canvas>
+
 </body>
 </html>
