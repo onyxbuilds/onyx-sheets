@@ -462,7 +462,8 @@ await loadData()
 inputMode={activeCellValue.startsWith('=') ? 'text' : col.type === 'number' ? 'decimal' : 'text'}
                           value={activeCellValue}
                           onChange={e => setActiveCellValue(e.target.value)}
-                          onBlur={saveCell}
+                          onFocus={e => { if (!activeCellValue.startsWith('=') && col.type === 'date') e.target.showPicker?.() }}
+                    onBlur={saveCell}
                           onKeyDown={e => {
                             if (e.key === 'Enter') saveCell()
                             if (e.key === 'Escape') setActiveCell(null)
