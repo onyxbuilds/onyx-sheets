@@ -529,7 +529,7 @@ function AddRowSheet({ columns, inputBg, subtext, onClose, onAdd }) {
           </label>
           <input
             type={col.type === 'date' ? 'date' : 'text'}
-            inputMode={col.type === 'number' ? 'decimal' : 'text'}
+            inputMode='text'
             placeholder={`Enter ${col.name.toLowerCase()}${col.type === 'number' ? ' or =formula' : ''}`}
             value={formData[col.id] || ''}
             onChange={e => setFormData(prev => ({ ...prev, [col.id]: e.target.value }))}
