@@ -71,7 +71,8 @@ export async function createRow(sheetId, cellData) {
 }
 
 export async function getRows(sheetId) {
-  const rows = await db.rows.where('sheetId').equals(sheetId).sortBy('createdAt')
+  const rawRows = await db.rows.where("sheetId").equals(sheetId).toArray()
+  const rows = rawRows.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
   for (const row of rows) {
     const cells = await db.cells.where('rowId').equals(row.id).toArray()
     row.cells = {}

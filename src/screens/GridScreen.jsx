@@ -544,7 +544,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade }) {
               </label>
               <input
                 type={
-                  col.type === 'number' ? 'number'
+                  col.type === 'number' ? 'text'
                   : col.type === 'date' ? 'date'
                   : 'text'
                 }
