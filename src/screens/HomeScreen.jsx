@@ -1,4 +1,4 @@
-// ── HOME SCREEN ───────────────────────────────────────────
+// — HOME SCREEN
 // Lists all sheets
 // Create, open, delete sheets
 // Shows free tier usage
@@ -12,14 +12,16 @@ import {
   createSheet,
   getSheets,
   deleteSheet,
-  createColumn
+  createColumn,
+  db
 } from '../db'
+import { syncFromCloud, syncToCloud } from '../sync'
 import {
   hasReachedSheetLimit,
   getLimitMessage
 } from '../utils/limits'
 
-export default function HomeScreen({ onOpenSheet, onUpgrade }) {
+export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
   const { isDark, toggleTheme } = useTheme()
   const [sheets, setSheets] = useState([])
   const [showCreate, setShowCreate] = useState(false)
@@ -30,16 +32,32 @@ export default function HomeScreen({ onOpenSheet, onUpgrade }) {
   const [confirm, setConfirm] = useState(null)
   const [paywall, setPaywall] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
 
-  // Load sheets from Dexie on mount
   useEffect(() => {
-    loadSheets()
+    initData()
   }, [])
+
+  async function initData() {
+    setLoading(true)
+    // Try to pull from cloud first
+    if (user) {
+      setSyncing(true)
+      const pulled = await syncFromCloud(user.id, db)
+      setSyncing(false)
+      if (pulled) {
+        await loadSheets()
+        setLoading(false)
+        return
+      }
+    }
+    await loadSheets()
+    setLoading(false)
+  }
 
   async function loadSheets() {
     const data = await getSheets()
     setSheets(data)
-    setLoading(false)
   }
 
   function addColumn() {
@@ -58,7 +76,6 @@ export default function HomeScreen({ onOpenSheet, onUpgrade }) {
   async function handleCreateSheet() {
     if (!newSheetName.trim()) return
 
-    // Check free tier limit
     if (hasReachedSheetLimit(sheets.length, false)) {
       setShowCreate(false)
       setPaywall('sheets')
@@ -68,18 +85,15 @@ export default function HomeScreen({ onOpenSheet, onUpgrade }) {
     const validColumns = columns.filter(c => c.name.trim())
     if (validColumns.length === 0) return
 
-    // Create sheet in Dexie
     const sheetId = await createSheet(newSheetName.trim())
-
-    // Create columns in Dexie
     for (let i = 0; i < validColumns.length; i++) {
       await createColumn(sheetId, validColumns[i].name, validColumns[i].type, i)
     }
 
-    // Reload sheets
-    await loadSheets()
+    // Sync to cloud after creating
+    if (user) await syncToCloud(user.id, db)
 
-    // Reset form
+    await loadSheets()
     setNewSheetName('')
     setColumns([{ id: 1, name: 'Item', type: 'text' }])
     setShowCreate(false)
@@ -90,10 +104,20 @@ export default function HomeScreen({ onOpenSheet, onUpgrade }) {
       message: `Delete "${sheetName}"? This cannot be undone.`,
       onConfirm: async () => {
         await deleteSheet(sheetId)
+        // Sync to cloud after deleting
+        if (user) await syncToCloud(user.id, db)
         await loadSheets()
         setConfirm(null)
       }
     })
+  }
+
+  // Manual sync trigger
+  async function handleManualSync() {
+    if (!user) return
+    setSyncing(true)
+    await syncToCloud(user.id, db)
+    setSyncing(false)
   }
 
   const bg = isDark ? 'bg-gray-950' : 'bg-gray-50'
@@ -101,9 +125,13 @@ export default function HomeScreen({ onOpenSheet, onUpgrade }) {
   const cardBg = isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'
   const text = isDark ? 'text-white' : 'text-gray-900'
   const subtext = isDark ? 'text-gray-400' : 'text-gray-500'
+  const inputBg = isDark
+    ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500'
+    : 'bg-gray-100 border-gray-300 text-gray-900 placeholder-gray-400'
 
   return (
     <div className={`min-h-screen ${bg} ${text}`}>
+
       {confirm && (
         <ConfirmDialog
           message={confirm.message}
@@ -116,10 +144,7 @@ export default function HomeScreen({ onOpenSheet, onUpgrade }) {
         <Paywall
           message={getLimitMessage(paywall)}
           onClose={() => setPaywall(null)}
-          onUpgrade={() => {
-            setPaywall(null)
-            onUpgrade()
-          }}
+          onUpgrade={() => { setPaywall(null); onUpgrade() }}
         />
       )}
 
@@ -127,38 +152,44 @@ export default function HomeScreen({ onOpenSheet, onUpgrade }) {
       <div className={`${headerBg} border-b px-4 py-4`}>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold tracking-tight">⬡ Onyx</h1>
+            <h1 className="text-xl font-bold tracking-tight">◈ Onyx</h1>
             <p className={`text-xs ${subtext} mt-0.5`}>Sheets</p>
           </div>
           <div className="flex items-center gap-2">
+            {/* Sync button */}
+            {user && (
+              <button
+                onPointerDown={handleManualSync}
+                className={`w-10 h-10 rounded-xl flex items-center justify-center text-base active:opacity-70 ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}
+                title="Sync to cloud"
+              >
+                {syncing ? '⏳' : '☁️'}
+              </button>
+            )}
             {/* Theme toggle */}
             <button
-              onClick={toggleTheme}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${
-                isDark ? 'bg-gray-800' : 'bg-gray-100'
-              }`}
+              onPointerDown={toggleTheme}
+              className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}
             >
-              {isDark ? '☀️' : '🌙'}
+              {isDark ? '🌤' : '🌙'}
             </button>
             <button
-              onClick={() => setShowCreate(true)}
+              onPointerDown={() => setShowCreate(true)}
               className="bg-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl active:bg-indigo-700"
             >+ New Sheet</button>
           </div>
         </div>
 
-        {/* Free tier usage bar */}
-        <div className="mt-3">
+        {/* Free tier usage */}
+        <div className="mt-2">
           <div className="flex items-center justify-between mb-1">
             <span className={`text-xs ${subtext}`}>
               {sheets.length} of 5 free sheets used
             </span>
             <button
-              onClick={onUpgrade}
+              onPointerDown={onUpgrade}
               className="text-indigo-400 text-xs font-semibold"
-            >
-              Upgrade →
-            </button>
+            >Upgrade →</button>
           </div>
           <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
             <div
@@ -167,13 +198,23 @@ export default function HomeScreen({ onOpenSheet, onUpgrade }) {
             />
           </div>
         </div>
+
+        {/* User info */}
+        {user && (
+          <p className={`text-xs ${subtext} mt-2`}>
+            ☁️ Synced as {user.email}
+          </p>
+        )}
       </div>
 
       {/* Sheet list */}
       <div className="px-4 py-4 space-y-3">
         {loading && (
           <div className="text-center py-20">
-            <div className="text-3xl animate-pulse">⬡</div>
+            <div className="text-3xl animate-pulse">◎</div>
+            <p className={`${subtext} text-sm mt-2`}>
+              {syncing ? 'Syncing from cloud...' : 'Loading...'}
+            </p>
           </div>
         )}
 
@@ -195,15 +236,13 @@ export default function HomeScreen({ onOpenSheet, onUpgrade }) {
             <div className="flex items-center justify-between">
               <div
                 className="flex-1 py-1"
-                onClick={() => onOpenSheet(sheet)}
+                onPointerDown={() => onOpenSheet(sheet)}
               >
                 <h2 className="font-semibold text-base">{sheet.name}</h2>
-                <p className={`${subtext} text-xs mt-1`}>
-                  Tap to open
-                </p>
+                <p className={`${subtext} text-xs mt-1`}>Tap to open</p>
               </div>
               <button
-                onClick={() => handleDeleteSheet(sheet.id, sheet.name)}
+                onPointerDown={() => handleDeleteSheet(sheet.id, sheet.name)}
                 className="bg-red-950 text-red-400 text-sm font-semibold px-4 py-3 rounded-xl ml-3 active:bg-red-900"
               >Delete</button>
             </div>
@@ -225,14 +264,14 @@ export default function HomeScreen({ onOpenSheet, onUpgrade }) {
             value={newSheetName}
             onChange={e => setNewSheetName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleCreateSheet()}
-            className="w-full bg-gray-800 text-white placeholder-gray-500 rounded-xl px-4 py-3 text-base outline-none border border-gray-700 focus:border-indigo-500"
+            className={`w-full ${inputBg} rounded-xl px-4 py-3 text-base outline-none border focus:border-indigo-500`}
           />
 
           <div>
             <div className="flex items-center justify-between mb-3">
               <p className="text-gray-400 text-sm font-medium">Columns</p>
               <button
-                onClick={addColumn}
+                onPointerDown={addColumn}
                 className="text-indigo-400 text-sm py-2 px-3"
               >+ Add</button>
             </div>
@@ -244,7 +283,7 @@ export default function HomeScreen({ onOpenSheet, onUpgrade }) {
                     placeholder="Column name"
                     value={col.name}
                     onChange={e => updateColumn(col.id, 'name', e.target.value)}
-                    className="flex-1 bg-gray-800 text-white placeholder-gray-500 rounded-xl px-3 py-3 text-sm outline-none border border-gray-700 focus:border-indigo-500"
+                    className={`flex-1 ${inputBg} rounded-xl px-3 py-3 text-sm outline-none border focus:border-indigo-500`}
                   />
                   <select
                     value={col.type}
@@ -256,8 +295,8 @@ export default function HomeScreen({ onOpenSheet, onUpgrade }) {
                     <option value="date">Date</option>
                   </select>
                   <button
-                    onClick={() => removeColumn(col.id)}
-                    className="text-red-400 text-2xl w-10 h-10 flex items-center justify-center"
+                    onPointerDown={() => removeColumn(col.id)}
+                    className="text-red-400 text-xl w-10 h-10 flex items-center justify-center"
                   >×</button>
                 </div>
               ))}
@@ -265,11 +304,12 @@ export default function HomeScreen({ onOpenSheet, onUpgrade }) {
           </div>
 
           <button
-            onClick={handleCreateSheet}
+            onPointerDown={handleCreateSheet}
             className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl text-base active:bg-indigo-700"
           >Create Sheet</button>
         </BottomSheet>
       )}
+
     </div>
   )
 }
