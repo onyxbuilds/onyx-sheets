@@ -91,7 +91,13 @@ export async function deleteColumn(columnId, sheetId) {
 // ── ROW OPERATIONS ────────────────────────────────────────
 
 export async function createRow(sheetId, cellData) {
-    return await db.rows.add({ sheetId, ...cellData, createdAt: Date.now() });
+    const rowId = await db.rows.add({ sheetId, createdAt: Date.now() })
+  for (const [columnId, value] of Object.entries(cellData)) {
+    if (String(value).trim()) {
+      await db.cells.add({ rowId, columnId: Number(columnId), value: String(value) })
+    }
+  }
+  return rowId
     }
  
   // Count existing rows to set position
