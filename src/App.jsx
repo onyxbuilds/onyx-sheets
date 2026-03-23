@@ -1,19 +1,19 @@
-// ── APP ROOT ──────────────────────────────────────────────
-// Handles routing between screens
-// Manages first launch detection
-// Wraps everything in ThemeProvider
+// — APP ROOT
 
 import { useState, useEffect } from 'react'
 import { ThemeProvider } from './theme'
 import SplashScreen from './screens/SplashScreen'
 import OnboardingScreen from './screens/OnboardingScreen'
+import SignInScreen from './screens/SignInScreen'
 import HomeScreen from './screens/HomeScreen'
 import GridScreen from './screens/GridScreen'
 import UpgradeScreen from './screens/UpgradeScreen'
+import { onAuthChange } from './auth'
 
 const SCREENS = {
   SPLASH: 'splash',
   ONBOARDING: 'onboarding',
+  SIGNIN: 'signin',
   HOME: 'home',
   GRID: 'grid',
   UPGRADE: 'upgrade'
@@ -23,9 +23,9 @@ export default function App() {
   const [screen, setScreen] = useState(SCREENS.SPLASH)
   const [currentSheet, setCurrentSheet] = useState(null)
   const [isFirstLaunch, setIsFirstLaunch] = useState(false)
+  const [user, setUser] = useState(null)
 
   useEffect(() => {
-    // Check if this is the first time the app has been opened
     const launched = localStorage.getItem('onyx-launched')
     if (!launched) {
       setIsFirstLaunch(true)
@@ -33,16 +33,29 @@ export default function App() {
     }
   }, [])
 
+  // Listen for auth state changes
+  useEffect(() => {
+    const { data: { subscription } } = onAuthChange((user) => {
+      setUser(user)
+      if (user && (screen === SCREENS.SIGNIN || screen === SCREENS.SPLASH)) {
+        setScreen(SCREENS.HOME)
+      }
+    })
+    return () => subscription.unsubscribe()
+  }, [screen])
+
   function handleSplashDone() {
     if (isFirstLaunch) {
       setScreen(SCREENS.ONBOARDING)
-    } else {
+    } else if (user) {
       setScreen(SCREENS.HOME)
+    } else {
+      setScreen(SCREENS.SIGNIN)
     }
   }
 
   function handleOnboardingDone() {
-    setScreen(SCREENS.HOME)
+    setScreen(SCREENS.SIGNIN)
   }
 
   function handleOpenSheet(sheet) {
@@ -72,18 +85,19 @@ export default function App() {
       {screen === SCREENS.SPLASH && (
         <SplashScreen onDone={handleSplashDone} />
       )}
-
       {screen === SCREENS.ONBOARDING && (
         <OnboardingScreen onDone={handleOnboardingDone} />
       )}
-
-      {screen === SCREENS.HOME && (
+      {screen === SCREENS.SIGNIN && (
+        <SignInScreen />
+      )}
+      {screen === SCREENS.HOME && user && (
         <HomeScreen
+          user={user}
           onOpenSheet={handleOpenSheet}
           onUpgrade={handleUpgrade}
         />
       )}
-
       {screen === SCREENS.GRID && currentSheet && (
         <GridScreen
           sheet={currentSheet}
@@ -91,7 +105,6 @@ export default function App() {
           onUpgrade={handleUpgrade}
         />
       )}
-
       {screen === SCREENS.UPGRADE && (
         <UpgradeScreen onBack={handleBackFromUpgrade} />
       )}
