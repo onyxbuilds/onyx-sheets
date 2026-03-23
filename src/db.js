@@ -2,6 +2,13 @@ import Dexie from 'dexie'
 
 export const db = new Dexie('onyxsheets')
 
+// Request persistent storage — prevents browser from silently evicting data
+if (navigator.storage?.persist) {
+  navigator.storage.persist().then(granted => {
+    console.log("Persistent storage:", granted ? "granted" : "denied")
+  })
+}
+
 db.version(1).stores({
   sheets: '++id, name, createdAt, updatedAt',
   columns: '++id, sheetId, name, type, position',
