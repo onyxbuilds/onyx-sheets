@@ -24,6 +24,7 @@ export default function App() {
   const [currentSheet, setCurrentSheet] = useState(null)
   const [isFirstLaunch, setIsFirstLaunch] = useState(false)
   const [user, setUser] = useState(null)
+  const [authLoading, setAuthLoading] = useState(true)
 
   useEffect(() => {
     const launched = localStorage.getItem('onyx-launched')
@@ -36,6 +37,7 @@ export default function App() {
   // Listen for auth state changes
   useEffect(() => {
     const { data: { subscription } } = onAuthChange((user) => {
+      setAuthLoading(false)
       setUser(user)
       if (user && (screen === SCREENS.SIGNIN || screen === SCREENS.SPLASH)) {
         setScreen(SCREENS.HOME)

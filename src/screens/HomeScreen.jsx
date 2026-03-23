@@ -16,6 +16,7 @@ import {
   db
 } from '../db'
 import { syncFromCloud, syncToCloud } from '../sync'
+import { signOut } from '../auth'
 import {
   hasReachedSheetLimit,
   getLimitMessage
@@ -158,14 +159,21 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
           <div className="flex items-center gap-2">
             {/* Sync button */}
             {user && (
-              <button
-                onPointerDown={handleManualSync}
-                className={`w-10 h-10 rounded-xl flex items-center justify-center text-base active:opacity-70 ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}
-                title="Sync to cloud"
-              >
-                {syncing ? '⏳' : '☁️'}
-              </button>
-            )}
+  <button
+    onPointerDown={async () => { await signOut(); window.location.reload() }}
+    className={`w-10 h-10 rounded-xl flex items-center justify-center text-base active:opacity-70 ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}
+    title="Sign out"
+  >🚪</button>
+)}
+{user && (
+  <button
+    onPointerDown={handleManualSync}
+    className={`w-10 h-10 rounded-xl flex items-center justify-center text-base active:opacity-70 ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}
+    title="Sync to cloud"
+  >
+    {syncing ? '⏳' : '☁️'}
+  </button>
+)}
             {/* Theme toggle */}
             <button
               onPointerDown={toggleTheme}

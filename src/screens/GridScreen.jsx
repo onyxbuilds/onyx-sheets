@@ -101,6 +101,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
         setRows(prev => prev.filter(r => r.id !== rowId))
         setConfirm(null)
         await deleteRow(rowId, sheet.id)
+        if (user) syncToCloud(user.id, db)
       }
     })
   }
@@ -421,6 +422,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
               return
             }
             await createRow(sheet.id, formData)
+    if (user) syncToCloud(user.id, db)
             await loadData()
           }}
         />
