@@ -101,6 +101,7 @@ export default function App() {
       {screen === SCREENS.GRID && currentSheet && (
         <GridScreen
           sheet={currentSheet}
+          user={user}
           onBack={handleBackToHome}
           onUpgrade={handleUpgrade}
         />

@@ -25,10 +25,12 @@ import {
   updateSheetName,
   canAddRow
 } from '../db'
+import { syncToCloud } from "../sync"
+import { db } from "../db"
 import { exportToCSV } from '../utils/export'
 import { getLimitMessage } from '../utils/limits'
 
-export default function GridScreen({ sheet, onBack, onUpgrade }) {
+export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
   const { isDark } = useTheme()
 
   const [columns, setColumns] = useState([])
@@ -83,6 +85,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade }) {
     // 2. Persist to DB in background
     try {
       await updateCell(rowId, colId, value)
+    syncToCloud(user?.id, db)
     } catch (e) {
       // If save fails, reload fresh data to revert
       loadData()
