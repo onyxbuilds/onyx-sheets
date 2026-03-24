@@ -110,6 +110,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
     const ok = await canAddRow(sheet.id)
     if (!ok) { setPaywall('rows'); return }
     await duplicateRow(rowId, sheet.id)
+    if (user) syncToCloud(user.id, db)
     await loadData()
   }
 
