@@ -24,7 +24,7 @@ export default function App() {
   const [currentSheet, setCurrentSheet] = useState(null)
   const [isFirstLaunch, setIsFirstLaunch] = useState(false)
   const [user, setUser] = useState(null)
-  const [authLoading, setAuthLoading] = useState(true)
+  const [authReady, setAuthReady] = useState(false)
 
   useEffect(() => {
     const launched = localStorage.getItem('onyx-launched')
@@ -34,19 +34,17 @@ export default function App() {
     }
   }, [])
 
-  // Listen for auth state changes
+  // Listen for auth state — fires immediately with current session
   useEffect(() => {
     const { data: { subscription } } = onAuthChange((user) => {
-      setAuthLoading(false)
       setUser(user)
-      if (user && (screen === SCREENS.SIGNIN || screen === SCREENS.SPLASH)) {
-        setScreen(SCREENS.HOME)
-      }
+      setAuthReady(true)
     })
     return () => subscription.unsubscribe()
-  }, [screen])
+  }, [])
 
   function handleSplashDone() {
+    if (!authReady) return // wait for auth to resolve
     if (isFirstLaunch) {
       setScreen(SCREENS.ONBOARDING)
     } else if (user) {
@@ -55,6 +53,19 @@ export default function App() {
       setScreen(SCREENS.SIGNIN)
     }
   }
+
+  // Once auth resolves while still on splash, auto-advance
+  useEffect(() => {
+    if (authReady && screen === SCREENS.SPLASH) {
+      if (isFirstLaunch) {
+        setScreen(SCREENS.ONBOARDING)
+      } else if (user) {
+        setScreen(SCREENS.HOME)
+      } else {
+        setScreen(SCREENS.SIGNIN)
+      }
+    }
+  }, [authReady, user])
 
   function handleOnboardingDone() {
     setScreen(SCREENS.SIGNIN)
@@ -103,9 +114,9 @@ export default function App() {
       {screen === SCREENS.GRID && currentSheet && (
         <GridScreen
           sheet={currentSheet}
-          user={user}
           onBack={handleBackToHome}
           onUpgrade={handleUpgrade}
+          user={user}
         />
       )}
       {screen === SCREENS.UPGRADE && (
