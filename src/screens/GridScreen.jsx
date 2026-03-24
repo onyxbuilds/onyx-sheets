@@ -536,7 +536,7 @@ function AddRowSheet({ columns, inputBg, subtext, onClose, onAdd }) {
           <input
             type={col.type === 'date' ? 'date' : 'text'}
             inputMode='text'
-            placeholder={`Enter ${col.name.toLowerCase()}${col.type === 'number' ? ' or =formula' : ''}`}
+            placeholder={col.type === 'number' ? `=SUM(A1:A10), =AVG, =COUNT, =MIN, =MAX` : `Enter ${col.name.toLowerCase()}`}
             value={formData[col.id] || ''}
             onChange={e => setFormData(prev => ({ ...prev, [col.id]: e.target.value }))}
             autoFocus={index === 0}
