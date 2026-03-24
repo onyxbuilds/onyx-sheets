@@ -308,7 +308,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
               {columns.map((col, colIndex) => (
                 <th
                   key={col.id}
-                  className={`text-xs font-semibold px-4 py-3 text-left border-l ${cellBorder}`}
+                  className={`text-xs font-semibold px-4 py-3 text-left border-l ${cellBorder} ${gridHeaderBg}`}
                   style={{ minWidth: '140px' }}
                 >
                   <div className="flex items-center gap-1">
@@ -405,7 +405,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
       {/* FAB */}
       <button
         onPointerDown={() => setShowAddRow(true)}
-        className="fixed bottom-6 right-6 bg-indigo-600 text-white w-16 h-16 rounded-full text-3xl shadow-2xl shadow-indigo-900 flex items-center justify-center active:bg-indigo-700 z-40"
+        className="fixed bottom-6 right-6 bg-indigo-600 text-white w-12 h-12 rounded-full text-xl shadow-lg shadow-indigo-900 flex items-center justify-center active:bg-indigo-700 z-40"
       >+</button>
 
       {/* Add Row — formData lives inside here, not in GridScreen */}
