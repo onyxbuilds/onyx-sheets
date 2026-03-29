@@ -82,3 +82,11 @@ export function getDisplayValue(value, rows, columns) {
   }
   return value ?? ''
 }
+export function formatCellValue(value, type) {
+    if (!value || type !== 'date') return value
+      const date = new Date(value)
+        if (isNaN(date)) return value
+          return date.toLocaleDateString(navigator.language, {
+              day: '2-digit', month: '2-digit', year: 'numeric'
+                })
+                }

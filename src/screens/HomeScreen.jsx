@@ -1,56 +1,37 @@
 // — HOME SCREEN
-// Lists all sheets
-// Create, open, delete sheets
-// Shows free tier usage
-
 import { useState, useEffect } from 'react'
 import { useTheme } from '../theme'
 import BottomSheet from '../components/BottomSheet'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Paywall from '../components/Paywall'
-import {
-  createSheet,
-  getSheets,
-  deleteSheet,
-  createColumn,
-  db
-} from '../db'
+import { createSheet, getSheets, deleteSheet, createColumn, db } from '../db'
 import { syncFromCloud, syncToCloud } from '../sync'
 import { signOut } from '../auth'
-import {
-  hasReachedSheetLimit,
-  getLimitMessage
-} from '../utils/limits'
+import { hasReachedSheetLimit, getLimitMessage } from '../utils/limits'
 
 export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
   const { isDark, toggleTheme } = useTheme()
   const [sheets, setSheets] = useState([])
   const [showCreate, setShowCreate] = useState(false)
   const [newSheetName, setNewSheetName] = useState('')
-  const [columns, setColumns] = useState([
-    { id: 1, name: 'Item', type: 'text' }
-  ])
+  const [columns, setColumns] = useState([{ id: 1, name: 'Item', type: 'text' }])
   const [confirm, setConfirm] = useState(null)
   const [paywall, setPaywall] = useState(null)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [showFeedback, setShowFeedback] = useState(false)
+  const [feedbackText, setFeedbackText] = useState('')
+  const [feedbackSent, setFeedbackSent] = useState(false)
 
-  useEffect(() => {
-    initData()
-  }, [])
+  useEffect(() => { initData() }, [])
 
   async function initData() {
     setLoading(true)
-    // Try to pull from cloud first
     if (user) {
       setSyncing(true)
       const pulled = await syncFromCloud(user.id, db)
       setSyncing(false)
-      if (pulled) {
-        await loadSheets()
-        setLoading(false)
-        return
-      }
+      if (pulled) { await loadSheets(); setLoading(false); return }
     }
     await loadSheets()
     setLoading(false)
@@ -76,24 +57,18 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
 
   async function handleCreateSheet() {
     if (!newSheetName.trim()) return
-
     if (hasReachedSheetLimit(sheets.length, false)) {
       setShowCreate(false)
       setPaywall('sheets')
       return
     }
-
     const validColumns = columns.filter(c => c.name.trim())
     if (validColumns.length === 0) return
-
     const sheetId = await createSheet(newSheetName.trim())
     for (let i = 0; i < validColumns.length; i++) {
       await createColumn(sheetId, validColumns[i].name, validColumns[i].type, i)
     }
-
-    // Sync to cloud after creating
     if (user) await syncToCloud(user.id, db)
-
     await loadSheets()
     setNewSheetName('')
     setColumns([{ id: 1, name: 'Item', type: 'text' }])
@@ -105,7 +80,6 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
       message: `Delete "${sheetName}"? This cannot be undone.`,
       onConfirm: async () => {
         await deleteSheet(sheetId)
-        // Sync to cloud after deleting
         if (user) await syncToCloud(user.id, db)
         await loadSheets()
         setConfirm(null)
@@ -113,12 +87,27 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
     })
   }
 
-  // Manual sync trigger
   async function handleManualSync() {
     if (!user) return
     setSyncing(true)
     await syncToCloud(user.id, db)
     setSyncing(false)
+  }
+
+  async function handleSignOut() {
+    await signOut()
+    window.location.reload()
+  }
+
+  async function handleFeedbackSubmit() {
+    if (!feedbackText.trim()) return
+    console.log('Feedback:', feedbackText, 'from:', user?.email)
+    setFeedbackSent(true)
+    setTimeout(() => {
+      setShowFeedback(false)
+      setFeedbackText('')
+      setFeedbackSent(false)
+    }, 2000)
   }
 
   const bg = isDark ? 'bg-gray-950' : 'bg-gray-50'
@@ -129,6 +118,7 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
   const inputBg = isDark
     ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500'
     : 'bg-gray-100 border-gray-300 text-gray-900 placeholder-gray-400'
+  const btnBg = isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'
 
   return (
     <div className={`min-h-screen ${bg} ${text}`}>
@@ -150,69 +140,71 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
       )}
 
       {/* Header */}
-      <div className={`${headerBg} border-b px-4 py-4`}>
-        <div className="flex items-center justify-between">
+      <div className={`${headerBg} border-b px-4 pt-4 pb-3`}>
+
+        {/* Row 1 — Logo + action buttons */}
+        <div className="flex items-center justify-between mb-3">
           <div>
-            <h1 className="text-xl font-bold tracking-tight">◈ Onyx</h1>
-            <p className={`text-xs ${subtext} mt-0.5`}>Sheets</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Sync button */}
+            <h1 className="text-lg font-bold tracking-tight">◈ Onyx Sheets</h1>
             {user && (
-  <button
-    onPointerDown={async () => { await signOut(); window.location.reload() }}
-    className={`w-10 h-10 rounded-xl flex items-center justify-center text-base active:opacity-70 ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}
-    title="Sign out"
-  >🚪</button>
-)}
-{user && (
-  <button
-    onPointerDown={handleManualSync}
-    className={`w-10 h-10 rounded-xl flex items-center justify-center text-base active:opacity-70 ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}
-    title="Sync to cloud"
-  >
-    {syncing ? '⏳' : '☁️'}
-  </button>
-)}
-            {/* Theme toggle */}
+              <p className={`text-xs ${subtext} mt-0.5 truncate max-w-48`}>{user.email}</p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5">
             <button
               onPointerDown={toggleTheme}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}
-            >
-              {isDark ? '🌤' : '🌙'}
-            </button>
+              className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm ${btnBg} active:opacity-70`}
+              title="Toggle theme"
+            >{isDark ? '☀️' : '🌙'}</button>
+
+            {user && (
+              <button
+                onPointerDown={handleManualSync}
+                className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm ${btnBg} active:opacity-70`}
+                title="Sync to cloud"
+              >{syncing ? '⏳' : '☁️'}</button>
+            )}
+
             <button
-              onPointerDown={() => setShowCreate(true)}
-              className="bg-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl active:bg-indigo-700"
-            >+ New Sheet</button>
+              onPointerDown={() => setShowFeedback(true)}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm ${btnBg} active:opacity-70`}
+              title="Send feedback"
+            >💬</button>
+
+            {user && (
+              <button
+                onPointerDown={handleSignOut}
+                className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm ${btnBg} active:opacity-70`}
+                title="Sign out"
+              >🚪</button>
+            )}
           </div>
         </div>
 
-        {/* Free tier usage */}
-        <div className="mt-2">
-          <div className="flex items-center justify-between mb-1">
-            <span className={`text-xs ${subtext}`}>
-              {sheets.length} of 5 free sheets used
-            </span>
-            <button
-              onPointerDown={onUpgrade}
-              className="text-indigo-400 text-xs font-semibold"
-            >Upgrade →</button>
+        {/* Row 2 — Usage bar + New Sheet button */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1">
+            <div className="flex items-center justify-between mb-1">
+              <span className={`text-xs ${subtext}`}>{sheets.length} / 5 free sheets</span>
+              <button
+                onPointerDown={onUpgrade}
+                className="text-indigo-400 text-xs font-semibold active:opacity-70"
+              >Upgrade →</button>
+            </div>
+            <div className={`h-1 rounded-full overflow-hidden ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`}>
+              <div
+                className="h-full bg-indigo-600 rounded-full transition-all"
+                style={{ width: `${Math.min((sheets.length / 5) * 100, 100)}%` }}
+              />
+            </div>
           </div>
-          <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-indigo-600 rounded-full transition-all"
-              style={{ width: `${Math.min((sheets.length / 5) * 100, 100)}%` }}
-            />
-          </div>
-        </div>
 
-        {/* User info */}
-        {user && (
-          <p className={`text-xs ${subtext} mt-2`}>
-            ☁️ Synced as {user.email}
-          </p>
-        )}
+          <button
+            onPointerDown={() => setShowCreate(true)}
+            className="bg-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl active:bg-indigo-700 shrink-0"
+          >+ New</button>
+        </div>
       </div>
 
       {/* Sheet list */}
@@ -230,41 +222,27 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
           <div className="text-center py-20">
             <div className="text-5xl mb-4">📊</div>
             <p className={`${subtext} text-sm`}>No sheets yet</p>
-            <p className={`${subtext} text-xs mt-1 opacity-60`}>
-              Tap New Sheet to get started
-            </p>
+            <p className={`${subtext} text-xs mt-1 opacity-60`}>Tap + New to get started</p>
           </div>
         )}
 
         {sheets.map(sheet => (
-          <div
-            key={sheet.id}
-            className={`${cardBg} border rounded-2xl p-4`}
-          >
-            <div className="flex items-center justify-between">
-              <div
-                className="flex-1 py-1"
-                onPointerDown={() => onOpenSheet(sheet)}
-              >
-                <h2 className="font-semibold text-base">{sheet.name}</h2>
-                <p className={`${subtext} text-xs mt-1`}>Tap to open</p>
-              </div>
-              <button
-                onPointerDown={() => handleDeleteSheet(sheet.id, sheet.name)}
-                className="bg-red-950 text-red-400 text-sm font-semibold px-4 py-3 rounded-xl ml-3 active:bg-red-900"
-              >Delete</button>
+          <div key={sheet.id} className={`${cardBg} border rounded-2xl p-4 flex items-center justify-between`}>
+            <div className="flex-1 py-1 min-w-0" onPointerDown={() => onOpenSheet(sheet)}>
+              <h2 className="font-semibold text-base truncate">{sheet.name}</h2>
+              <p className={`${subtext} text-xs mt-0.5`}>Tap to open</p>
             </div>
+            <button
+              onPointerDown={() => handleDeleteSheet(sheet.id, sheet.name)}
+              className="bg-red-950 text-red-400 text-xs font-semibold px-3 py-2 rounded-xl ml-3 active:bg-red-900 shrink-0"
+            >Delete</button>
           </div>
         ))}
       </div>
 
-      {/* Create sheet bottom sheet */}
+      {/* Create Sheet */}
       {showCreate && (
-        <BottomSheet
-          title="New Sheet"
-          onClose={() => setShowCreate(false)}
-          tall
-        >
+        <BottomSheet title="New Sheet" onClose={() => setShowCreate(false)} tall>
           <input
             autoFocus
             type="text"
@@ -274,14 +252,10 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
             onKeyDown={e => e.key === 'Enter' && handleCreateSheet()}
             className={`w-full ${inputBg} rounded-xl px-4 py-3 text-base outline-none border focus:border-indigo-500`}
           />
-
           <div>
             <div className="flex items-center justify-between mb-3">
-              <p className="text-gray-400 text-sm font-medium">Columns</p>
-              <button
-                onPointerDown={addColumn}
-                className="text-indigo-400 text-sm py-2 px-3"
-              >+ Add</button>
+              <p className={`${subtext} text-sm font-medium`}>Columns</p>
+              <button onPointerDown={addColumn} className="text-indigo-400 text-sm py-2 px-3 active:opacity-70">+ Add</button>
             </div>
             <div className="space-y-2">
               {columns.map(col => (
@@ -296,25 +270,48 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
                   <select
                     value={col.type}
                     onChange={e => updateColumn(col.id, 'type', e.target.value)}
-                    className="bg-gray-800 text-gray-300 rounded-xl px-3 py-3 text-sm outline-none border border-gray-700"
+                    className={`${isDark ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-gray-100 text-gray-700 border-gray-300'} rounded-xl px-3 py-3 text-sm outline-none border`}
                   >
                     <option value="text">Text</option>
                     <option value="number">Number</option>
                     <option value="date">Date</option>
                   </select>
-                  <button
-                    onPointerDown={() => removeColumn(col.id)}
-                    className="text-red-400 text-xl w-10 h-10 flex items-center justify-center"
-                  >×</button>
+                  <button onPointerDown={() => removeColumn(col.id)} className="text-red-400 text-xl w-10 h-10 flex items-center justify-center active:opacity-70">×</button>
                 </div>
               ))}
             </div>
           </div>
+          <button onPointerDown={handleCreateSheet} className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl text-base active:bg-indigo-700">
+            Create Sheet
+          </button>
+        </BottomSheet>
+      )}
 
-          <button
-            onPointerDown={handleCreateSheet}
-            className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl text-base active:bg-indigo-700"
-          >Create Sheet</button>
+      {/* Feedback */}
+      {showFeedback && (
+        <BottomSheet title="Send Feedback" onClose={() => setShowFeedback(false)}>
+          {feedbackSent ? (
+            <div className="text-center py-8">
+              <div className="text-4xl mb-3">✅</div>
+              <p className={`${text} font-semibold`}>Thank you!</p>
+              <p className={`${subtext} text-sm mt-1`}>Your feedback has been received.</p>
+            </div>
+          ) : (
+            <>
+              <p className={`${subtext} text-sm mb-3`}>Found a bug? Have a suggestion? We read everything.</p>
+              <textarea
+                autoFocus
+                rows={5}
+                placeholder="Tell us what's on your mind..."
+                value={feedbackText}
+                onChange={e => setFeedbackText(e.target.value)}
+                className={`w-full ${inputBg} rounded-xl px-4 py-3 text-base outline-none border focus:border-indigo-500 resize-none`}
+              />
+              <button onPointerDown={handleFeedbackSubmit} className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl text-base active:bg-indigo-700">
+                Send Feedback
+              </button>
+            </>
+          )}
         </BottomSheet>
       )}
 

@@ -2,7 +2,7 @@
 // Editing state lives here, never in the parent GridScreen
 
 import { useState, useRef, memo } from 'react'
-import { getDisplayValue, isFormula } from '../utils/formulas'
+import { getDisplayValue, isFormula, formatCellValue } from '../utils/formulas'
 
 const Cell = memo(function Cell({ row, col, rows, columns, onSave, isDark }) {
   const [isEditing, setIsEditing] = useState(false)
@@ -10,7 +10,9 @@ const Cell = memo(function Cell({ row, col, rows, columns, onSave, isDark }) {
       const inputRef = useRef(null)
 
         const rawValue = row.cells?.[col.id] || ''
-          const displayValue = getDisplayValue(rawValue, rows, columns)
+          const displayValue = col.type === 'date' 
+            ? formatCellValue(rawValue, col.type) 
+              : getDisplayValue(rawValue, rows, columns)
 
             const text = isDark ? 'text-white' : 'text-gray-900'
               const cellBorder = isDark ? 'border-gray-900' : 'border-gray-200'
