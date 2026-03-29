@@ -296,7 +296,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
       </div>
 
       {/* Grid */}
-      <div className="flex-1 overflow-auto relative">
+      <div className="flex-1 overflow-auto relative" style={{ height: 0 }}>
         <table className="border-collapse" style={{ minWidth: '100%' }}>
           <thead className={`sticky top-0 z-20 ${gridHeaderBg}`}>
             <tr className={`${gridHeaderBg} border-b ${cellBorder}`}>

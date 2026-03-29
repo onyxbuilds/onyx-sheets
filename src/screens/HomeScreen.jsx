@@ -100,15 +100,27 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
   }
 
   async function handleFeedbackSubmit() {
-    if (!feedbackText.trim()) return
-    console.log('Feedback:', feedbackText, 'from:', user?.email)
-    setFeedbackSent(true)
-    setTimeout(() => {
-      setShowFeedback(false)
-      setFeedbackText('')
-      setFeedbackSent(false)
-    }, 2000)
+  if (!feedbackText.trim()) return
+  try {
+    await fetch('https://formspree.io/f/xdapeark', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: feedbackText,
+        email: user?.email || 'anonymous',
+        _subject: 'Onyx Sheets Feedback'
+      })
+    })
+  } catch (e) {
+    console.error('Feedback error:', e)
   }
+  setFeedbackSent(true)
+  setTimeout(() => {
+    setShowFeedback(false)
+    setFeedbackText('')
+    setFeedbackSent(false)
+  }, 2000)
+}
 
   const bg = isDark ? 'bg-gray-950' : 'bg-gray-50'
   const headerBg = isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'
