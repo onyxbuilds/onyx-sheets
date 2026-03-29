@@ -180,7 +180,7 @@ export async function exportToPDF(sheet, columns, rows) {
                                                     y = 20
                                                         }
                                                             columns.forEach((col, i) => {
-                                                                  const val = String(row.cells?.[col.id] || '')
+                                                                  const val = String(getDisplayValue(row.cells?.[col.id] || '', rows, columns))
                                                                         doc.text(val.substring(0, 18), startX + i * colWidth, y)
                                                                             })
                                                                                 y += 7
