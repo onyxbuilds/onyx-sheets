@@ -22,6 +22,8 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
   const [showFeedback, setShowFeedback] = useState(false)
   const [feedbackText, setFeedbackText] = useState('')
   const [feedbackSent, setFeedbackSent] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => { initData() }, [])
 
@@ -56,6 +58,7 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
   }
 
   async function handleCreateSheet() {
+    if (creating) return
     if (!newSheetName.trim()) return
     if (hasReachedSheetLimit(sheets.length, false)) {
       setShowCreate(false)
@@ -64,25 +67,36 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
     }
     const validColumns = columns.filter(c => c.name.trim())
     if (validColumns.length === 0) return
-    const sheetId = await createSheet(newSheetName.trim())
-    for (let i = 0; i < validColumns.length; i++) {
-      await createColumn(sheetId, validColumns[i].name, validColumns[i].type, i)
+    setCreating(true)
+    try {
+      const sheetId = await createSheet(newSheetName.trim())
+      for (let i = 0; i < validColumns.length; i++) {
+        await createColumn(sheetId, validColumns[i].name, validColumns[i].type, i)
+      }
+      if (user) await syncToCloud(user.id, db)
+      await loadSheets()
+      setNewSheetName('')
+      setColumns([{ id: 1, name: 'Item', type: 'text' }])
+      setShowCreate(false)
+    } finally {
+      setCreating(false)
     }
-    if (user) await syncToCloud(user.id, db)
-    await loadSheets()
-    setNewSheetName('')
-    setColumns([{ id: 1, name: 'Item', type: 'text' }])
-    setShowCreate(false)
   }
 
   async function handleDeleteSheet(sheetId, sheetName) {
+    if (deleting) return
     setConfirm({
       message: `Delete "${sheetName}"? This cannot be undone.`,
       onConfirm: async () => {
-        await deleteSheet(sheetId)
-        if (user) await syncToCloud(user.id, db)
-        await loadSheets()
-        setConfirm(null)
+        setDeleting(true)
+        try {
+          await deleteSheet(sheetId)
+          if (user) await syncToCloud(user.id, db)
+          await loadSheets()
+          setConfirm(null)
+        } finally {
+          setDeleting(false)
+        }
       }
     })
   }
@@ -100,27 +114,27 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
   }
 
   async function handleFeedbackSubmit() {
-  if (!feedbackText.trim()) return
-  try {
-    await fetch('https://formspree.io/f/xdapeark', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: feedbackText,
-        email: user?.email || 'anonymous',
-        _subject: 'Onyx Sheets Feedback'
+    if (!feedbackText.trim()) return
+    try {
+      await fetch('https://formspree.io/f/xdapeark', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: feedbackText,
+          email: user?.email || 'anonymous',
+          _subject: 'Onyx Sheets Feedback'
+        })
       })
-    })
-  } catch (e) {
-    console.error('Feedback error:', e)
+    } catch (e) {
+      console.error('Feedback error:', e)
+    }
+    setFeedbackSent(true)
+    setTimeout(() => {
+      setShowFeedback(false)
+      setFeedbackText('')
+      setFeedbackSent(false)
+    }, 2000)
   }
-  setFeedbackSent(true)
-  setTimeout(() => {
-    setShowFeedback(false)
-    setFeedbackText('')
-    setFeedbackSent(false)
-  }, 2000)
-}
 
   const bg = isDark ? 'bg-gray-950' : 'bg-gray-50'
   const headerBg = isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'
@@ -153,8 +167,6 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
 
       {/* Header */}
       <div className={`${headerBg} border-b px-4 pt-4 pb-3`}>
-
-        {/* Row 1 — Logo + action buttons */}
         <div className="flex items-center justify-between mb-3">
           <div>
             <h1 className="text-lg font-bold tracking-tight">◈ Onyx Sheets</h1>
@@ -194,7 +206,6 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
           </div>
         </div>
 
-        {/* Row 2 — Usage bar + New Sheet button */}
         <div className="flex items-center gap-3">
           <div className="flex-1">
             <div className="flex items-center justify-between mb-1">
@@ -247,6 +258,7 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
             <button
               onPointerDown={() => handleDeleteSheet(sheet.id, sheet.name)}
               className="bg-red-950 text-red-400 text-xs font-semibold px-3 py-2 rounded-xl ml-3 active:bg-red-900 shrink-0"
+              disabled={deleting}
             >Delete</button>
           </div>
         ))}
@@ -288,13 +300,20 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
                     <option value="number">Number</option>
                     <option value="date">Date</option>
                   </select>
-                  <button onPointerDown={() => removeColumn(col.id)} className="text-red-400 text-xl w-10 h-10 flex items-center justify-center active:opacity-70">×</button>
+                  <button
+                    onPointerDown={() => removeColumn(col.id)}
+                    className="text-red-400 text-xl w-10 h-10 flex items-center justify-center active:opacity-70"
+                  >×</button>
                 </div>
               ))}
             </div>
           </div>
-          <button onPointerDown={handleCreateSheet} className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl text-base active:bg-indigo-700">
-            Create Sheet
+          <button
+            onPointerDown={handleCreateSheet}
+            disabled={creating}
+            className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl text-base active:bg-indigo-700 disabled:opacity-50"
+          >
+            {creating ? 'Creating...' : 'Create Sheet'}
           </button>
         </BottomSheet>
       )}
@@ -319,9 +338,10 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
                 onChange={e => setFeedbackText(e.target.value)}
                 className={`w-full ${inputBg} rounded-xl px-4 py-3 text-base outline-none border focus:border-indigo-500 resize-none`}
               />
-              <button onPointerDown={handleFeedbackSubmit} className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl text-base active:bg-indigo-700">
-                Send Feedback
-              </button>
+              <button
+                onPointerDown={handleFeedbackSubmit}
+                className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl text-base active:bg-indigo-700"
+              >Send Feedback</button>
             </>
           )}
         </BottomSheet>
