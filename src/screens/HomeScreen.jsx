@@ -73,7 +73,7 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
       for (let i = 0; i < validColumns.length; i++) {
         await createColumn(sheetId, validColumns[i].name, validColumns[i].type, i)
       }
-      if (user) await syncToCloud(user.id, db)
+      if (user) syncToCloud(user.id, db)
       await loadSheets()
       setNewSheetName('')
       setColumns([{ id: 1, name: 'Item', type: 'text' }])
@@ -89,11 +89,13 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
       message: `Delete "${sheetName}"? This cannot be undone.`,
       onConfirm: async () => {
         setDeleting(true)
+        setConfirm(null)
+        setSheets(prev => prev.filter(s => s.id !== sheetId))
         try {
           await deleteSheet(sheetId)
-          if (user) await syncToCloud(user.id, db)
+          if (user) syncToCloud(user.id, db)
+        } catch (e) {
           await loadSheets()
-          setConfirm(null)
         } finally {
           setDeleting(false)
         }
