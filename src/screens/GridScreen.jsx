@@ -1,10 +1,4 @@
 // GridScreen.jsx — Optimized spreadsheet view
-// Key changes:
-// - Cell editing state lives in <Cell>, not here (kills typing lag)
-// - displayRows wrapped in useMemo (kills re-sort on every keystroke)
-// - Optimistic UI for cell saves (instant feedback, no reload wait)
-// - formData moved into BottomSheet scope (kills background re-renders)
-// - hover replaced with active/onPointerDown (fixes sticky hover on mobile)
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTheme } from '../theme'
@@ -13,21 +7,12 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import Paywall from '../components/Paywall'
 import Cell from '../components/Cell'
 import {
-  getColumns,
-  getRows,
-  createColumn,
-  updateColumn,
-  deleteColumn,
-  createRow,
-  updateCell,
-  deleteRow,
-  duplicateRow,
-  updateSheetName,
-  canAddRow
+  getColumns, getRows, createColumn, updateColumn,
+  deleteColumn, createRow, updateCell, deleteRow,
+  duplicateRow, updateSheetName, canAddRow, db
 } from '../db'
-import { syncToCloud } from "../sync"
-import { db } from "../db"
-import { exportToCSV } from '../utils/export'
+import { exportToCSV, exportToPDF, parseCSV } from '../utils/export'
+import { syncToCloud } from '../sync'
 import { getLimitMessage } from '../utils/limits'
 
 export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
@@ -66,38 +51,40 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
     setLoading(false)
   }
 
-  // Sheet name
   async function saveSheetName() {
     if (sheetName.trim()) await updateSheetName(sheet.id, sheetName.trim())
     setEditingName(false)
   }
 
-  // Optimistic cell save — update UI instantly, persist in background
   const handleCellSave = useCallback(async (rowId, colId, value) => {
-    // 1. Update local state immediately so user sees the change now
     setRows(prev => prev.map(row => {
       if (row.id !== rowId) return row
-      return {
-        ...row,
-        cells: { ...row.cells, [colId]: value }
-      }
+      return { ...row, cells: { ...row.cells, [colId]: value } }
     }))
-    // 2. Persist to DB in background
     try {
       await updateCell(rowId, colId, value)
-    syncToCloud(user?.id, db)
+      if (user) syncToCloud(user.id, db)
     } catch (e) {
-      // If save fails, reload fresh data to revert
       loadData()
     }
-  }, [])
+  }, [user])
 
-  // Row operations
+  async function handleAddRow(formData) {
+    const ok = await canAddRow(sheet.id)
+    if (!ok) {
+      setShowAddRow(false)
+      setPaywall('rows')
+      return
+    }
+    await createRow(sheet.id, formData)
+    if (user) syncToCloud(user.id, db)
+    await loadData()
+  }
+
   async function handleDeleteRow(rowId) {
     setConfirm({
       message: 'Delete this row?',
       onConfirm: async () => {
-        // Optimistic remove
         setRows(prev => prev.filter(r => r.id !== rowId))
         setConfirm(null)
         await deleteRow(rowId, sheet.id)
@@ -114,7 +101,6 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
     await loadData()
   }
 
-  // Column operations
   async function handleUpdateColumn() {
     if (!editColData?.name.trim()) return
     await updateColumn(editColData.id, { name: editColData.name, type: editColData.type })
@@ -137,7 +123,6 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
     })
   }
 
-  // Sort toggle
   function handleSort(colId) {
     setSortConfig(prev => {
       if (prev?.colId === colId) {
@@ -147,10 +132,31 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
     })
   }
 
-  // useMemo — only recalculates when data actually changes, not on every keystroke
+  async function handleCSVImport(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    const text = await file.text()
+    const parsed = parseCSV(text)
+    if (!parsed) return
+    const { headers, rows: csvRows } = parsed
+    const newColIds = []
+    for (let i = 0; i < headers.length; i++) {
+      const colId = await createColumn(sheet.id, headers[i], 'text', i)
+      newColIds.push(colId)
+    }
+    for (const csvRow of csvRows) {
+      const cellData = {}
+      headers.forEach((header, i) => {
+        cellData[newColIds[i]] = csvRow[header] || ''
+      })
+      await createRow(sheet.id, cellData)
+    }
+    if (user) syncToCloud(user.id, db)
+    await loadData()
+  }
+
   const displayRows = useMemo(() => {
     let result = [...rows]
-
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       result = result.filter(row =>
@@ -159,7 +165,6 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
         )
       )
     }
-
     if (sortConfig) {
       result.sort((a, b) => {
         const aVal = a.cells?.[sortConfig.colId] || ''
@@ -167,19 +172,13 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
         const aNum = parseFloat(aVal)
         const bNum = parseFloat(bVal)
         const isNumeric = !isNaN(aNum) && !isNaN(bNum)
-        if (isNumeric) {
-          return sortConfig.dir === 'asc' ? aNum - bNum : bNum - aNum
-        }
-        return sortConfig.dir === 'asc'
-          ? aVal.localeCompare(bVal)
-          : bVal.localeCompare(aVal)
+        if (isNumeric) return sortConfig.dir === 'asc' ? aNum - bNum : bNum - aNum
+        return sortConfig.dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
       })
     }
-
     return result
   }, [rows, columns, searchQuery, sortConfig])
 
-  // Theme
   const bg = isDark ? 'bg-gray-950' : 'bg-gray-50'
   const headerBg = isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'
   const gridHeaderBg = isDark ? 'bg-gray-900' : 'bg-gray-100'
@@ -257,9 +256,17 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
               className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold active:opacity-70 ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'}`}
             >CSV</button>
             <button
+              onPointerDown={() => exportToPDF(sheet, columns, rows)}
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold bg-red-900 text-red-300 active:opacity-70"
+            >PDF</button>
+            <button
               onPointerDown={() => setPaywall('excelExport')}
               className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold bg-green-900 text-green-300 active:opacity-70"
             >XLS</button>
+            <label
+              className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold active:opacity-70 cursor-pointer ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'}`}
+              title="Import CSV"
+            >↑<input type="file" accept=".csv" className="hidden" onChange={handleCSVImport} /></label>
           </div>
         </div>
 
@@ -297,66 +304,61 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
 
       {/* Grid */}
       <div className="flex-1 overflow-auto relative" style={{ height: 0 }}>
-        <table className="border-separate border-spacing-0" style={{ minWidth: '100%' }}>
-
+        <table className="border-collapse" style={{ minWidth: '100%' }}>
           <thead className={`sticky top-0 z-20 ${gridHeaderBg}`}>
-  <tr className={`${gridHeaderBg}`}>
-    <th
-      className={`${subtext} text-xs px-3 py-3 text-left sticky top-0 left-0 ${gridHeaderBg} z-30 border-b ${cellBorder}`}
-      style={{ minWidth: '48px' }}
-    >#</th>
+            <tr className={`${gridHeaderBg}`}>
+              <th
+                className={`${subtext} text-xs px-3 py-3 text-left sticky top-0 left-0 ${gridHeaderBg} z-30 border-b ${cellBorder}`}
+                style={{ minWidth: '48px' }}
+              >#</th>
 
-    {columns.map((col, colIndex) => (
-      <th
-        key={col.id}
-        className={`text-xs font-semibold px-4 py-3 text-left border-l border-b ${cellBorder} ${gridHeaderBg}`}
-        style={{ minWidth: '140px' }}
-      >
-        <div className="flex items-center gap-1">
-          <button
-            onPointerDown={() => handleSort(col.id)}
-            className="flex items-center gap-1 flex-1 text-left"
-          >
-            <span className={text}>
-              {String.fromCharCode(65 + colIndex)} {col.name}
-            </span>
-            <span className={subtext}>
-              {col.type === 'number' ? '123' : col.type === 'date' ? '📅' : 'Aa'}
-            </span>
-            {sortConfig?.colId === col.id && (
-              <span className="text-indigo-400">
-                {sortConfig.dir === 'asc' ? '↑' : '↓'}
-              </span>
-            )}
-          </button>
-          <button
-            onPointerDown={() => {
-              setEditingColumn(col)
-              setEditColData({ ...col })
-            }}
-            className="text-indigo-500 text-xs px-1 active:opacity-70"
-          >⋮</button>
-        </div>
-      </th>
-    ))}
+              {columns.map((col, colIndex) => (
+                <th
+                  key={col.id}
+                  className={`text-xs font-semibold px-4 py-3 text-left border-l border-b ${cellBorder} ${gridHeaderBg}`}
+                  style={{ minWidth: '140px' }}
+                >
+                  <div className="flex items-center gap-1">
+                    <button
+                      onPointerDown={() => handleSort(col.id)}
+                      className="flex items-center gap-1 flex-1 text-left"
+                    >
+                      <span className={text}>
+                        {String.fromCharCode(65 + colIndex)} — {col.name}
+                      </span>
+                      <span className={subtext}>
+                        {col.type === 'number' ? '123' : col.type === 'date' ? '📅' : 'Aa'}
+                      </span>
+                      {sortConfig?.colId === col.id && (
+                        <span className="text-indigo-400">
+                          {sortConfig.dir === 'asc' ? '↑' : '↓'}
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      onPointerDown={() => {
+                        setEditingColumn(col)
+                        setEditColData({ ...col })
+                      }}
+                      className="text-indigo-500 text-xs px-1 active:opacity-70"
+                    >✏️</button>
+                  </div>
+                </th>
+              ))}
 
-    <th className={`border-l border-b ${cellBorder} px-3`} style={{ minWidth: '60px' }}>
-      <button
-        onPointerDown={() => setShowAddColumn(true)}
-        className="text-indigo-400 text-xs py-2 whitespace-nowrap active:opacity-70"
-      >+ Col</button>
-    </th>
-  </tr>
-</thead>
-
+              <th className={`border-l border-b ${cellBorder} px-3 ${gridHeaderBg}`} style={{ minWidth: '60px' }}>
+                <button
+                  onPointerDown={() => setShowAddColumn(true)}
+                  className="text-indigo-400 text-xs py-2 whitespace-nowrap active:opacity-70"
+                >+ Col</button>
+              </th>
+            </tr>
+          </thead>
 
           <tbody>
             {displayRows.length === 0 && (
               <tr>
-                <td
-                  colSpan={columns.length + 2}
-                  className={`text-center py-20 ${subtext} text-sm`}
-                >
+                <td colSpan={columns.length + 2} className={`text-center py-20 ${subtext} text-sm`}>
                   {searchQuery ? 'No results found' : 'No rows yet. Tap + to add data.'}
                 </td>
               </tr>
@@ -383,8 +385,6 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
                   </div>
                 </td>
 
-                {/* Each cell is a memoized component — typing in one cell
-                    does NOT re-render any other cell or the table */}
                 {columns.map(col => (
                   <Cell
                     key={col.id}
@@ -410,33 +410,20 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
         className="fixed bottom-6 right-6 bg-indigo-600 text-white w-12 h-12 rounded-full text-xl shadow-lg shadow-indigo-900 flex items-center justify-center active:bg-indigo-700 z-40"
       >+</button>
 
-      {/* Add Row — formData lives inside here, not in GridScreen */}
+      {/* Add Row */}
       {showAddRow && (
         <AddRowSheet
           columns={columns}
           inputBg={inputBg}
           subtext={subtext}
           onClose={() => setShowAddRow(false)}
-          onAdd={async (formData) => {
-            const ok = await canAddRow(sheet.id)
-            if (!ok) {
-              setShowAddRow(false)
-              setPaywall('rows')
-              return
-            }
-            await createRow(sheet.id, formData)
-    if (user) syncToCloud(user.id, db)
-            await loadData()
-          }}
+          onAdd={handleAddRow}
         />
       )}
 
       {/* Add Column */}
       {showAddColumn && (
-        <BottomSheet
-          title="Add Column"
-          onClose={() => setShowAddColumn(false)}
-        >
+        <BottomSheet title="Add Column" onClose={() => setShowAddColumn(false)}>
           <input
             autoFocus
             type="text"
@@ -512,8 +499,6 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
   )
 }
 
-// AddRowSheet — isolated component so formData state lives here
-// Typing in this form does NOT re-render the table behind it
 function AddRowSheet({ columns, inputBg, subtext, onClose, onAdd }) {
   const [formData, setFormData] = useState({})
 
@@ -525,20 +510,14 @@ function AddRowSheet({ columns, inputBg, subtext, onClose, onAdd }) {
   }
 
   return (
-    <BottomSheet
-      title="Add Row"
-      onClose={() => { onClose(); }}
-      tall
-    >
+    <BottomSheet title="Add Row" onClose={onClose} tall>
       {columns.map((col, index) => (
         <div key={col.id}>
-          <label className={`${subtext} text-sm font-medium block mb-2`}>
-            {col.name}
-          </label>
+          <label className={`${subtext} text-sm font-medium block mb-2`}>{col.name}</label>
           <input
             type={col.type === 'date' ? 'date' : 'text'}
-            inputMode='text'
-            placeholder={col.type === 'number' ? `=SUM(A1:A10), =AVG, =COUNT, =MIN, =MAX` : `Enter ${col.name.toLowerCase()}`}
+            inputMode={col.type === 'number' ? 'decimal' : 'text'}
+            placeholder={col.type === 'number' ? `Enter ${col.name.toLowerCase()} or =formula` : `Enter ${col.name.toLowerCase()}`}
             value={formData[col.id] || ''}
             onChange={e => setFormData(prev => ({ ...prev, [col.id]: e.target.value }))}
             autoFocus={index === 0}

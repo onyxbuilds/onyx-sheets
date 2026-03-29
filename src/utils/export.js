@@ -149,3 +149,42 @@ function downloadFile(content, filename, mimeType) {
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
 }
+
+// — PDF EXPORT
+export async function exportToPDF(sheet, columns, rows) {
+  const { jsPDF } = await import('jspdf')
+    const doc = new jsPDF({ orientation: 'landscape' })
+
+      doc.setFontSize(16)
+        doc.text(sheet.name, 14, 20)
+
+          doc.setFontSize(8)
+            doc.setFont('helvetica', 'bold')
+
+              const colWidth = 40
+                const startX = 14
+                  let y = 32
+
+                    // Header row
+                      columns.forEach((col, i) => {
+                          doc.text(col.name, startX + i * colWidth, y)
+                            })
+
+                              doc.setFont('helvetica', 'normal')
+                                y += 8
+
+                                  // Data rows
+                                    for (const row of rows) {
+                                        if (y > 190) {
+                                              doc.addPage()
+                                                    y = 20
+                                                        }
+                                                            columns.forEach((col, i) => {
+                                                                  const val = String(row.cells?.[col.id] || '')
+                                                                        doc.text(val.substring(0, 18), startX + i * colWidth, y)
+                                                                            })
+                                                                                y += 7
+                                                                                  }
+
+                                                                                    doc.save(`${sheet.name}.pdf`)
+                                                                                    }
