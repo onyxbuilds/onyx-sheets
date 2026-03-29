@@ -297,56 +297,58 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
 
       {/* Grid */}
       <div className="flex-1 overflow-auto relative" style={{ height: 0 }}>
-        <table className="border-collapse" style={{ minWidth: '100%' }}>
+        <table className="border-separate border-spacing-0" style={{ minWidth: '100%' }}>
+
           <thead className={`sticky top-0 z-20 ${gridHeaderBg}`}>
-            <tr className={`${gridHeaderBg} border-b ${cellBorder}`}>
-              <th
-                className={`${subtext} text-xs px-3 py-3 text-left sticky left-0 ${gridHeaderBg} z-10`}
-                style={{ minWidth: '48px' }}
-              >#</th>
+  <tr className={`${gridHeaderBg}`}>
+    <th
+      className={`${subtext} text-xs px-3 py-3 text-left sticky top-0 left-0 ${gridHeaderBg} z-30 border-b ${cellBorder}`}
+      style={{ minWidth: '48px' }}
+    >#</th>
 
-              {columns.map((col, colIndex) => (
-                <th
-                  key={col.id}
-                  className={`text-xs font-semibold px-4 py-3 text-left border-l ${cellBorder} ${gridHeaderBg}`}
-                  style={{ minWidth: '140px' }}
-                >
-                  <div className="flex items-center gap-1">
-                    <button
-                      onPointerDown={() => handleSort(col.id)}
-                      className="flex items-center gap-1 flex-1 text-left"
-                    >
-                      <span className={text}>
-                        {String.fromCharCode(65 + colIndex)} — {col.name}
-                      </span>
-                      <span className={subtext}>
-                        {col.type === 'number' ? '123' : col.type === 'date' ? '📅' : 'Aa'}
-                      </span>
-                      {sortConfig?.colId === col.id && (
-                        <span className="text-indigo-400">
-                          {sortConfig.dir === 'asc' ? '↑' : '↓'}
-                        </span>
-                      )}
-                    </button>
-                    <button
-                      onPointerDown={() => {
-                        setEditingColumn(col)
-                        setEditColData({ ...col })
-                      }}
-                      className="text-indigo-500 text-xs px-1 active:opacity-70"
-                    >✏️</button>
-                  </div>
-                </th>
-              ))}
+    {columns.map((col, colIndex) => (
+      <th
+        key={col.id}
+        className={`text-xs font-semibold px-4 py-3 text-left border-l border-b ${cellBorder} ${gridHeaderBg}`}
+        style={{ minWidth: '140px' }}
+      >
+        <div className="flex items-center gap-1">
+          <button
+            onPointerDown={() => handleSort(col.id)}
+            className="flex items-center gap-1 flex-1 text-left"
+          >
+            <span className={text}>
+              {String.fromCharCode(65 + colIndex)} {col.name}
+            </span>
+            <span className={subtext}>
+              {col.type === 'number' ? '123' : col.type === 'date' ? '📅' : 'Aa'}
+            </span>
+            {sortConfig?.colId === col.id && (
+              <span className="text-indigo-400">
+                {sortConfig.dir === 'asc' ? '↑' : '↓'}
+              </span>
+            )}
+          </button>
+          <button
+            onPointerDown={() => {
+              setEditingColumn(col)
+              setEditColData({ ...col })
+            }}
+            className="text-indigo-500 text-xs px-1 active:opacity-70"
+          >⋮</button>
+        </div>
+      </th>
+    ))}
 
-              <th className={`border-l ${cellBorder} px-3`} style={{ minWidth: '60px' }}>
-                <button
-                  onPointerDown={() => setShowAddColumn(true)}
-                  className="text-indigo-400 text-xs py-2 whitespace-nowrap active:opacity-70"
-                >+ Col</button>
-              </th>
-            </tr>
-          </thead>
+    <th className={`border-l border-b ${cellBorder} px-3`} style={{ minWidth: '60px' }}>
+      <button
+        onPointerDown={() => setShowAddColumn(true)}
+        className="text-indigo-400 text-xs py-2 whitespace-nowrap active:opacity-70"
+      >+ Col</button>
+    </th>
+  </tr>
+</thead>
+
 
           <tbody>
             {displayRows.length === 0 && (
