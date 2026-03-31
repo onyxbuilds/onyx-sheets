@@ -5,9 +5,8 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   build: {
-        chunkSizeWarningLimit: 1000,
-         },
-  })
+    chunkSizeWarningLimit: 1000
+  },
   plugins: [
     react(),
     tailwindcss(),
@@ -61,3 +60,4 @@ export default defineConfig({
       }
     })
   ]
+})
