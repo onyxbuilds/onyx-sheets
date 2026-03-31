@@ -217,17 +217,17 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
       )}
 
       {/* Header */}
-      <div className={`${headerBg} border-b px-4 py-3`}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <button
-              onPointerDown={onBack}
-              className={`${subtext} text-2xl w-10 h-10 flex items-center justify-center shrink-0`}
-            >←</button>
+            <div className={`${headerBg} border-b px-4 py-3`}>
+                    <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                                          <button
+                                                        onPointerDown={onBack}
+                                                                      className={`${isDark ? 'bg-gray-800 text-white' : 'bg-gray-200 text-gray-900'} text-xl font-bold w-10 h-10 flex items-center justify-center rounded-xl shrink-0 active:opacity-70`}
+                                                                                  >←</button>
 
-            {editingName ? (
-              <input
-                autoFocus
+                                                                                              {editingName ? (
+                                                                                                            <input
+                                                                                                                            autoFocus
                 type="text"
                 value={sheetName}
                 onChange={e => setSheetName(e.target.value)}
