@@ -8,12 +8,14 @@ export async function syncToCloud(userId, db) {
     for (const sheet of sheets) {
       // Upsert sheet
       await supabase.from('sheets').upsert({
-        id: sheet.id.toString(),
-        user_id: userId,
-        name: sheet.name,
-        created_at: sheet.createdAt,
-        updated_at: sheet.updatedAt
-      })
+          id: sheet.id.toString(),
+            user_id: userId,
+              name: sheet.name,
+                created_at: sheet.createdAt,
+                  updated_at: sheet.updatedAt,
+                    status: sheet.status || 'active',
+                      deleted_at: sheet.deletedAt || null
+                      })
 
       const columns = await db.columns.where('sheetId').equals(sheet.id).toArray()
       for (const col of columns) {
@@ -68,11 +70,13 @@ export async function syncFromCloud(userId, db) {
 
     for (const sheet of sheets) {
       await db.sheets.add({
-        id: parseInt(sheet.id) || sheet.id,
-        name: sheet.name,
-        createdAt: sheet.created_at,
-        updatedAt: sheet.updated_at
-      })
+          id: parseInt(sheet.id) || sheet.id,
+            name: sheet.name,
+              createdAt: sheet.created_at,
+                updatedAt: sheet.updated_at,
+                  status: sheet.status || 'active',
+                    deletedAt: sheet.deleted_at || null
+                    })
 
       const { data: columns } = await supabase
         .from('columns')

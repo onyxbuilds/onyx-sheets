@@ -9,8 +9,8 @@ if (navigator.storage?.persist) {
   })
 }
 
-db.version(1).stores({
-  sheets: '++id, name, createdAt, updatedAt',
+db.version(2).stores({
+  sheets: '++id, name, createdAt, updatedAt, status, deletedAt',
   columns: '++id, sheetId, name, type, position',
   rows: '++id, sheetId, createdAt',
   cells: '++id, rowId, columnId, value'
@@ -20,25 +20,57 @@ db.version(1).stores({
 
 export async function createSheet(name) {
   const now = Date.now()
-  const sheetId = await db.sheets.add({ name, createdAt: now, updatedAt: now })
+  const sheetId = await db.sheets.add({
+    name, createdAt: now, updatedAt: now,
+    status: 'active', deletedAt: null
+  })
   return sheetId
 }
 
 export async function getSheets() {
-  return await db.sheets.orderBy('createdAt').reverse().toArray()
+  const all = await db.sheets.orderBy('createdAt').reverse().toArray()
+  return all.filter(s => s.status === 'active')
+}
+
+export async function getBinSheets() {
+  const all = await db.sheets.orderBy('deletedAt').reverse().toArray()
+  return all.filter(s => s.status === 'deleted')
 }
 
 export async function updateSheetName(sheetId, name) {
   await db.sheets.update(sheetId, { name, updatedAt: Date.now() })
 }
 
-export async function deleteSheet(sheetId) {
+export async function softDeleteSheet(sheetId) {
+  await db.sheets.update(sheetId, {
+    status: 'deleted',
+    deletedAt: Date.now()
+  })
+}
+
+export async function restoreSheet(sheetId) {
+  await db.sheets.update(sheetId, {
+    status: 'active',
+    deletedAt: null
+  })
+}
+
+export async function permanentlyDeleteSheet(sheetId) {
   const rows = await db.rows.where('sheetId').equals(sheetId).toArray()
   const rowIds = rows.map(r => r.id)
   await db.cells.where('rowId').anyOf(rowIds).delete()
   await db.rows.where('sheetId').equals(sheetId).delete()
   await db.columns.where('sheetId').equals(sheetId).delete()
   await db.sheets.delete(sheetId)
+}
+
+export async function cleanupExpiredBinSheets() {
+  const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000)
+  const all = await db.sheets.toArray()
+  const expired = all.filter(s => s.status === 'deleted' && s.deletedAt < thirtyDaysAgo)
+  for (const sheet of expired) {
+    await permanentlyDeleteSheet(sheet.id)
+  }
 }
 
 // — COLUMN OPERATIONS —
@@ -124,9 +156,10 @@ export const FREE_LIMITS = {
 }
 
 export async function canCreateSheet() {
-  const count = await db.sheets.count()
-  return count < FREE_LIMITS.sheets
-}
+    const all = await db.sheets.toArray()
+      const activeCount = all.filter(s => s.status === 'active').length
+        return activeCount < FREE_LIMITS.sheets
+       }
 
 export async function canAddRow(sheetId) {
   const count = await db.rows.where('sheetId').equals(sheetId).count()
