@@ -16,6 +16,20 @@ db.version(2).stores({
   cells: '++id, rowId, columnId, value'
 })
 
+// Migrate existing sheets that don't have status field
+async function migrateExistingSheets() {
+  const all = await db.sheets.toArray()
+    for (const sheet of all) {
+        if (!sheet.status) {
+              await db.sheets.update(sheet.id, {
+                      status: 'active',
+                              deletedAt: null
+                                    })
+                                        }
+                                          }
+                                          }
+                                          migrateExistingSheets()
+
 // — SHEET OPERATIONS —
 
 export async function createSheet(name) {
@@ -29,7 +43,7 @@ export async function createSheet(name) {
 
 export async function getSheets() {
   const all = await db.sheets.orderBy('createdAt').reverse().toArray()
-  return all.filter(s => s.status === 'active')
+  return all.filter(s => s.status === 'active' || !s.status)
 }
 
 export async function getBinSheets() {

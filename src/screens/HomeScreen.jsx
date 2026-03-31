@@ -471,7 +471,7 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
                 className={`p-3 rounded-xl border text-left transition-all ${
                   (template.id === 'blank' && !selectedTemplate) ||
                   selectedTemplate?.id === template.id
-                    ? isDark ? 'border-indigo-500 bg-indigo-950' : 'border-indigo-500 bg-indigo-50'
+                    ? isDark ? 'border-indigo-500 bg-indigo-950' : 'border-indigo-500 bg-indigo-100'
                     : isDark ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-gray-50'
                 }`}
               >
