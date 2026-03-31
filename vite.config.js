@@ -4,6 +4,21 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  build: {
+        chunkSizeWarningLimit: 1000,
+            rollupOptions: {
+                  output: {
+                          manualChunks(id) {
+                                    if (id.includes('node_modules')) {
+                                                if (id.includes('react') || id.includes('react-dom')) return 'vendor'
+                                                            if (id.includes('dexie')) return 'dexie'
+                                                                        if (id.includes('@supabase')) return 'supabase'
+                                                                                  }
+                                                                                          }
+                                                                                                }
+                                                                                                    }
+                                                                                                      },
+  })
   plugins: [
     react(),
     tailwindcss(),
@@ -57,4 +72,3 @@ export default defineConfig({
       }
     })
   ]
-})
