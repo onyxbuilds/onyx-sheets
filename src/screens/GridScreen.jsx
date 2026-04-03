@@ -155,6 +155,42 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
     await loadData()
   }
 
+  async function handleShare() {
+      const csvContent = columns.map(c => c.name).join(',') + '\n' +
+          rows.map(row =>
+                columns.map(col => {
+                        const val = String(row.cells?.[col.id] || '')
+                                return val.includes(',') ? `"${val}"` : val
+                                      }).join(',')
+                                          ).join('\n')
+
+                                            const blob = new Blob([csvContent], { type: 'text/csv' })
+                                              const file = new File([blob], `${sheet.name}.csv`, { type: 'text/csv' })
+
+                                                if (navigator.share && navigator.canShare({ files: [file] })) {
+                                                    try {
+                                                          await navigator.share({
+                                                                  title: sheet.name,
+                                                                          text: `Sharing sheet: ${sheet.name}`,
+                                                                                  files: [file]
+                                                                                        })
+                                                                                            } catch (e) {
+                                                                                                  if (e.name !== 'AbortError') exportToCSV(sheet, columns, rows)
+                                                                                                      }
+                                                                                                        } else if (navigator.share) {
+                                                                                                            try {
+                                                                                                                  await navigator.share({
+                                                                                                                          title: sheet.name,
+                                                                                                                                  text: `${sheet.name} — ${rows.length} rows, ${columns.length} columns`
+                                                                                                                                        })
+                                                                                                                                            } catch (e) {
+                                                                                                                                                  if (e.name !== 'AbortError') exportToCSV(sheet, columns, rows)
+                                                                                                                                                      }
+                                                                                                                                                        } else {
+                                                                                                                                                            exportToCSV(sheet, columns, rows)
+                                                                                                                                                              }
+                                                                                                                                                              }
+
   const displayRows = useMemo(() => {
     let result = [...rows]
     if (searchQuery.trim()) {
@@ -251,6 +287,11 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
               onPointerDown={() => setShowSearch(s => !s)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center text-base active:opacity-70 ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}
             >🔍</button>
+            <button
+              onPointerDown={handleShare}
+                className={`w-9 h-9 rounded-xl flex items-center justify-center text-base active:opacity-70 ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'}`}
+                  title="Share sheet"
+                  >↗️</button>
             <button
               onPointerDown={() => exportToCSV(sheet, columns, rows)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold active:opacity-70 ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'}`}
