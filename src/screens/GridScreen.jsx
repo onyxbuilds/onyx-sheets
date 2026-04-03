@@ -1,6 +1,6 @@
 // GridScreen.jsx — Optimized spreadsheet view
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useTheme } from '../theme'
 import BottomSheet from '../components/BottomSheet'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -501,12 +501,15 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
 
 function AddRowSheet({ columns, inputBg, subtext, onClose, onAdd }) {
   const [formData, setFormData] = useState({})
+  const firstInputRef = useRef(null)
 
   async function handleSubmit() {
     const hasData = Object.values(formData).some(v => String(v).trim())
     if (!hasData) return
     await onAdd(formData)
     setFormData({})
+    // Return focus to first column input after successful entry
+    setTimeout(() => firstInputRef.current?.focus(), 50)
   }
 
   return (
@@ -515,6 +518,7 @@ function AddRowSheet({ columns, inputBg, subtext, onClose, onAdd }) {
         <div key={col.id}>
           <label className={`${subtext} text-sm font-medium block mb-2`}>{col.name}</label>
           <input
+            ref={index === 0 ? firstInputRef : null}
             type={col.type === 'date' ? 'date' : 'text'}
             inputMode={col.type === 'number' ? 'decimal' : 'text'}
             placeholder={col.type === 'number' ? `Enter ${col.name.toLowerCase()} or =formula` : `Enter ${col.name.toLowerCase()}`}
