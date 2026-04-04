@@ -1,5 +1,4 @@
 // — APP ROOT
-
 import { useState, useEffect } from 'react'
 import { ThemeProvider } from './theme'
 import SplashScreen from './screens/SplashScreen'
@@ -26,15 +25,17 @@ export default function App() {
   const [user, setUser] = useState(null)
   const [authReady, setAuthReady] = useState(false)
 
+  // First launch detection + set initial history state
   useEffect(() => {
     const launched = localStorage.getItem('onyx-launched')
     if (!launched) {
       setIsFirstLaunch(true)
       localStorage.setItem('onyx-launched', 'true')
     }
+    window.history.replaceState({ screen: SCREENS.HOME }, '')
   }, [])
 
-  // Listen for auth state — fires immediately with current session
+  // Auth listener
   useEffect(() => {
     const { data: { subscription } } = onAuthChange((user) => {
       setUser(user)
@@ -43,29 +44,81 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  function handleSplashDone() {
-    if (!authReady) return // wait for auth to resolve
-    if (isFirstLaunch) {
-      setScreen(SCREENS.ONBOARDING)
-    } else if (user) {
-      setScreen(SCREENS.HOME)
-    } else {
-      setScreen(SCREENS.SIGNIN)
-    }
-  }
-
-  // Once auth resolves while still on splash, auto-advance
+  // Auto-advance from splash once auth resolves
   useEffect(() => {
     if (authReady && screen === SCREENS.SPLASH) {
       if (isFirstLaunch) {
         setScreen(SCREENS.ONBOARDING)
       } else if (user) {
-        setScreen(SCREENS.HOME)
+        const lastSheet = localStorage.getItem('onyx-last-sheet')
+        if (lastSheet) {
+          try {
+            const parsed = JSON.parse(lastSheet)
+            setCurrentSheet(parsed)
+            setScreen(SCREENS.GRID)
+            window.history.replaceState({ screen: SCREENS.GRID }, '')
+          } catch (e) {
+            localStorage.removeItem('onyx-last-sheet')
+            setScreen(SCREENS.HOME)
+            window.history.replaceState({ screen: SCREENS.HOME }, '')
+          }
+        } else {
+          setScreen(SCREENS.HOME)
+          window.history.replaceState({ screen: SCREENS.HOME }, '')
+        }
       } else {
         setScreen(SCREENS.SIGNIN)
       }
     }
   }, [authReady, user])
+
+  // Hardware back button handler
+  useEffect(() => {
+    function handlePopState() {
+      if (screen === SCREENS.GRID) {
+        setCurrentSheet(null)
+        setScreen(SCREENS.HOME)
+        localStorage.removeItem('onyx-last-sheet')
+        window.history.replaceState({ screen: SCREENS.HOME }, '')
+      } else if (screen === SCREENS.UPGRADE) {
+        if (currentSheet) {
+          setScreen(SCREENS.GRID)
+          window.history.replaceState({ screen: SCREENS.GRID }, '')
+        } else {
+          setScreen(SCREENS.HOME)
+          window.history.replaceState({ screen: SCREENS.HOME }, '')
+        }
+      }
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [screen, currentSheet])
+
+  function handleSplashDone() {
+    if (!authReady) return
+    if (isFirstLaunch) {
+      setScreen(SCREENS.ONBOARDING)
+    } else if (user) {
+      const lastSheet = localStorage.getItem('onyx-last-sheet')
+      if (lastSheet) {
+        try {
+          const parsed = JSON.parse(lastSheet)
+          setCurrentSheet(parsed)
+          setScreen(SCREENS.GRID)
+          window.history.replaceState({ screen: SCREENS.GRID }, '')
+        } catch (e) {
+          localStorage.removeItem('onyx-last-sheet')
+          setScreen(SCREENS.HOME)
+          window.history.replaceState({ screen: SCREENS.HOME }, '')
+        }
+      } else {
+        setScreen(SCREENS.HOME)
+        window.history.replaceState({ screen: SCREENS.HOME }, '')
+      }
+    } else {
+      setScreen(SCREENS.SIGNIN)
+    }
+  }
 
   function handleOnboardingDone() {
     setScreen(SCREENS.SIGNIN)
@@ -74,22 +127,29 @@ export default function App() {
   function handleOpenSheet(sheet) {
     setCurrentSheet(sheet)
     setScreen(SCREENS.GRID)
+    localStorage.setItem('onyx-last-sheet', JSON.stringify(sheet))
+    window.history.pushState({ screen: SCREENS.GRID }, '')
   }
 
   function handleBackToHome() {
     setCurrentSheet(null)
     setScreen(SCREENS.HOME)
+    localStorage.removeItem('onyx-last-sheet')
+    window.history.replaceState({ screen: SCREENS.HOME }, '')
   }
 
   function handleUpgrade() {
     setScreen(SCREENS.UPGRADE)
+    window.history.pushState({ screen: SCREENS.UPGRADE }, '')
   }
 
   function handleBackFromUpgrade() {
     if (currentSheet) {
       setScreen(SCREENS.GRID)
+      window.history.replaceState({ screen: SCREENS.GRID }, '')
     } else {
       setScreen(SCREENS.HOME)
+      window.history.replaceState({ screen: SCREENS.HOME }, '')
     }
   }
 
