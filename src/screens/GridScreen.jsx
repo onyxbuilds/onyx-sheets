@@ -350,16 +350,16 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
             <tr className={`${gridHeaderBg}`}>
               <th
                 className={`${subtext} text-xs px-3 py-3 text-left sticky top-0 left-0 ${gridHeaderBg} z-30 border-b ${cellBorder}`}
-                style={{ minWidth: '48px' }}
-              >#</th>
+                  style={{ minWidth: '48px', position: 'sticky', top: 0 }}
+                  >        
+              #</th>
 
               {columns.map((col, colIndex) => (
                 <th
                   key={col.id}
-                  className={`text-xs font-semibold px-4 py-3 text-left border-l border-b ${cellBorder} ${gridHeaderBg}`}
-                  style={{ position: 'sticky', top: 0, background: 'inherit' }}
-                  style={{ minWidth: '140px' }}
-                >
+                    className={`text-xs font-semibold px-4 py-3 text-left border-l border-b ${cellBorder} ${gridHeaderBg}`}
+                      style={{ minWidth: '140px', position: 'sticky', top: 0 }}
+                      >
                   <div className="flex items-center gap-1">
                     <button
                       onPointerDown={() => handleSort(col.id)}
@@ -388,7 +388,10 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
                 </th>
               ))}
 
-              <th className={`border-l border-b ${cellBorder} px-3 ${gridHeaderBg}`} style={{ minWidth: '60px' }}>
+              <th
+                className={`border-l border-b ${cellBorder} px-3 ${gridHeaderBg}`}
+                  style={{ minWidth: '60px', position: 'sticky', top: 0 }}
+                  >
                 <button
                   onPointerDown={() => setShowAddColumn(true)}
                   className="text-indigo-400 text-xs py-2 whitespace-nowrap active:opacity-70"
