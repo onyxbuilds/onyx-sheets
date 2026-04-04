@@ -154,13 +154,41 @@ export async function deleteRow(rowId, sheetId) {
 }
 
 export async function duplicateRow(rowId, sheetId) {
-  const cells = await db.cells.where('rowId').equals(rowId).toArray()
-  const newRowId = await db.rows.add({ sheetId, createdAt: Date.now() })
-  for (const cell of cells) {
-    await db.cells.add({ rowId: newRowId, columnId: cell.columnId, value: cell.value })
-  }
-  return newRowId
-}
+    // Get source row to read its createdAt timestamp
+      const sourceRow = await db.rows.get(rowId)
+        const cells = await db.cells.where('rowId').equals(rowId).toArray()
+
+          // Get all rows sorted by createdAt to find what comes after source row
+            const allRows = await db.rows
+                .where('sheetId').equals(sheetId)
+                    .sortBy('createdAt')
+                      
+                        const sourceIndex = allRows.findIndex(r => r.id === rowId)
+                          const nextRow = allRows[sourceIndex + 1]
+
+                            // Insert new row's createdAt exactly between source row and the next row
+                              // If source is last row, just add 1ms after it
+                                let newCreatedAt
+                                  if (nextRow) {
+                                      newCreatedAt = Math.floor((sourceRow.createdAt + nextRow.createdAt) / 2)
+                                          // If there's no gap (timestamps are consecutive), shift all subsequent rows
+                                              if (newCreatedAt === sourceRow.createdAt || newCreatedAt === nextRow.createdAt) {
+                                                    // Shift every row after source by 2ms to make room
+                                                          for (let i = sourceIndex + 1; i < allRows.length; i++) {
+                                                                  await db.rows.update(allRows[i].id, { createdAt: allRows[i].createdAt + 2 })
+                                                                        }
+                                                                              newCreatedAt = sourceRow.createdAt + 1
+                                                                                  }
+                                                                                    } else {
+                                                                                        newCreatedAt = sourceRow.createdAt + 1
+                                                                                          }
+
+                                                                                            const newRowId = await db.rows.add({ sheetId, createdAt: newCreatedAt })
+                                                                                              for (const cell of cells) {
+                                                                                                  await db.cells.add({ rowId: newRowId, columnId: cell.columnId, value: cell.value })
+                                                                                                    }
+                                                                                                      return newRowId
+                                                                                                      }
 
 // — FREE TIER LIMIT CHECKS —
 
