@@ -344,9 +344,9 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
       </div>
 
       {/* Grid */}
-      <div className="flex-1 overflow-auto relative" style={{ height: 0 }}>
+      <div className="flex-1 overflow-auto relative" style={{ minHeight: 0 }}>
         <table className="border-collapse" style={{ minWidth: '100%' }}>
-          <thead className={`sticky top-0 z-20 ${gridHeaderBg}`}>
+          <thead className={`sticky top-0 z-20 ${gridHeaderBg}`} style={{ position: 'sticky', top: 0 }}>
             <tr className={`${gridHeaderBg}`}>
               <th
                 className={`${subtext} text-xs px-3 py-3 text-left sticky top-0 left-0 ${gridHeaderBg} z-30 border-b ${cellBorder}`}
@@ -357,6 +357,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
                 <th
                   key={col.id}
                   className={`text-xs font-semibold px-4 py-3 text-left border-l border-b ${cellBorder} ${gridHeaderBg}`}
+                  style={{ position: 'sticky', top: 0, background: 'inherit' }}
                   style={{ minWidth: '140px' }}
                 >
                   <div className="flex items-center gap-1">
