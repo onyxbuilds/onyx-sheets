@@ -1,4 +1,4 @@
-// Cell.jsx — Memoized cell component with formula autocomplete
+// Cell.jsx — Memoized cell component with formula autocomplete and keyboard toggle
 import { useState, useRef, memo } from 'react'
 import { getDisplayValue, isFormula, formatCellValue } from '../utils/formulas'
 
@@ -14,6 +14,7 @@ const Cell = memo(function Cell({ row, col, rows, columns, onSave, isDark }) {
   const [isEditing, setIsEditing] = useState(false)
   const [localValue, setLocalValue] = useState('')
   const [suggestions, setSuggestions] = useState([])
+  const [isNumericMode, setIsNumericMode] = useState(true)
   const inputRef = useRef(null)
   const inputType = useRef('text')
 
@@ -28,11 +29,10 @@ const Cell = memo(function Cell({ row, col, rows, columns, onSave, isDark }) {
   function handleOpen() {
     if (!rawValue.startsWith('=') && col.type === 'date') {
       inputType.current = 'date'
-    } else if (col.type === 'number') {
-      inputType.current = 'text'
     } else {
       inputType.current = 'text'
     }
+    setIsNumericMode(col.type === 'number')
     setLocalValue(rawValue)
     setIsEditing(true)
     setSuggestions([])
@@ -47,17 +47,12 @@ const Cell = memo(function Cell({ row, col, rows, columns, onSave, isDark }) {
   function handleChange(e) {
     const val = e.target.value
     setLocalValue(val)
-
-    // Show formula suggestions when = is typed
     if (val.startsWith('=')) {
       const typed = val.slice(1).toUpperCase()
-      if (typed === '' ) {
-        // Show all formulas when just = is typed
+      if (typed === '') {
         setSuggestions(FORMULAS)
       } else {
-        // Filter formulas by what's been typed after =
-        const filtered = FORMULAS.filter(f => f.name.startsWith(typed))
-        setSuggestions(filtered)
+        setSuggestions(FORMULAS.filter(f => f.name.startsWith(typed)))
       }
     } else {
       setSuggestions([])
@@ -65,16 +60,13 @@ const Cell = memo(function Cell({ row, col, rows, columns, onSave, isDark }) {
   }
 
   function handleSelectFormula(formulaName) {
-    // Insert formula with cursor positioned between the brackets
     const inserted = `=${formulaName}(:)`
     setLocalValue(inserted)
     setSuggestions([])
-    // Focus input and position cursor between ( and :
     setTimeout(() => {
       if (inputRef.current) {
         inputRef.current.focus()
-        // Position cursor after = and formula name and (
-        const cursorPos = formulaName.length + 2 // = + name + (
+        const cursorPos = formulaName.length + 2
         inputRef.current.setSelectionRange(cursorPos, cursorPos)
       }
     }, 0)
@@ -120,14 +112,10 @@ const Cell = memo(function Cell({ row, col, rows, columns, onSave, isDark }) {
           <input
             ref={inputRef}
             type={inputType.current}
+            inputMode={col.type === 'number' && isNumericMode ? 'decimal' : 'text'}
             value={localValue}
             onChange={handleChange}
-            onBlur={() => {
-              // Small delay so tapping a suggestion registers before blur
-              setTimeout(() => {
-                handleSave()
-              }, 150)
-            }}
+            onBlur={() => setTimeout(() => handleSave(), 150)}
             onKeyDown={handleKeyDown}
             className={`w-full px-4 py-3 text-sm outline-none ${
               isDark
@@ -137,32 +125,46 @@ const Cell = memo(function Cell({ row, col, rows, columns, onSave, isDark }) {
             style={{ minHeight: '48px' }}
           />
 
+          {/* Keyboard toggle for number cells */}
+          {col.type === 'number' && (
+            <button
+              onPointerDown={e => {
+                e.preventDefault()
+                setIsNumericMode(prev => !prev)
+                setTimeout(() => inputRef.current?.focus(), 0)
+              }}
+              className={`absolute right-1 top-1 text-xs px-2 py-1 rounded-lg z-10 active:opacity-70 ${
+                isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-600'
+              }`}
+            >
+              {isNumericMode ? '#→Aa' : 'Aa→#'}
+            </button>
+          )}
+
           {/* Formula autocomplete dropdown */}
           {suggestions.length > 0 && (
             <div
               ref={el => {
-                  if (!el) return
-                      const rect = el.getBoundingClientRect()
-                          const spaceBelow = window.innerHeight - rect.top
-                              if (spaceBelow < 200) {
-                                    el.style.top = 'auto'
-                                          el.style.bottom = '100%'
-                                              } else {
-                                                    el.style.top = '100%'
-                                                          el.style.bottom = 'auto'
-                                                              }
-                                                                }}
-                                                                  className={`absolute left-0 right-0 z-50 rounded-xl overflow-hidden shadow-2xl border ${
-                                                                      isDark
-                                                                            ? 'bg-gray-900 border-gray-700'
-                                                                                  : 'bg-white border-gray-200'
-                                                                                    }`}
-                                                                                      style={{ top: '100%', minWidth: '220px' }}
-                                                                                      >
+                if (!el) return
+                const rect = el.getBoundingClientRect()
+                const spaceBelow = window.innerHeight - rect.top
+                if (spaceBelow < 200) {
+                  el.style.top = 'auto'
+                  el.style.bottom = '100%'
+                } else {
+                  el.style.top = '100%'
+                  el.style.bottom = 'auto'
+                }
+              }}
+              className={`absolute left-0 right-0 z-50 rounded-xl overflow-hidden shadow-2xl border ${
+                isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'
+              }`}
+              style={{ top: '100%', minWidth: '220px' }}
+            >
               {suggestions.map((formula, index) => (
                 <button
                   key={formula.name}
-                  onPointerDown={(e) => {
+                  onPointerDown={e => {
                     e.preventDefault()
                     handleSelectFormula(formula.name)
                   }}
