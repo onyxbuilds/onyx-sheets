@@ -235,7 +235,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
   }
 
   return (
-    <div className={`min-h-screen ${bg} ${text} flex flex-col`}>
+    <div className={`h-screen ${bg} ${text} flex flex-col overflow-hidden`}>
 
       {confirm && (
         <ConfirmDialog
