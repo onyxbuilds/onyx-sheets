@@ -39,6 +39,9 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
   const [newColumn, setNewColumn] = useState({ name: '', type: 'text' })
   const [editColData, setEditColData] = useState(null)
 
+  const headerRef = useRef(null)
+  const bodyRef = useRef(null)
+
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
@@ -132,6 +135,13 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
     })
   }
 
+  // Sync horizontal scroll between frozen header and body
+  function handleBodyScroll(e) {
+    if (headerRef.current) {
+      headerRef.current.scrollLeft = e.target.scrollLeft
+    }
+  }
+
   async function handleCSVImport(e) {
     const file = e.target.files[0]
     if (!file) return
@@ -156,40 +166,31 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
   }
 
   async function handleShare() {
-      const csvContent = columns.map(c => c.name).join(',') + '\n' +
-          rows.map(row =>
-                columns.map(col => {
-                        const val = String(row.cells?.[col.id] || '')
-                                return val.includes(',') ? `"${val}"` : val
-                                      }).join(',')
-                                          ).join('\n')
-
-                                            const blob = new Blob([csvContent], { type: 'text/csv' })
-                                              const file = new File([blob], `${sheet.name}.csv`, { type: 'text/csv' })
-
-                                                if (navigator.share && navigator.canShare({ files: [file] })) {
-                                                    try {
-                                                          await navigator.share({
-                                                                  title: sheet.name,
-                                                                          text: `Sharing sheet: ${sheet.name}`,
-                                                                                  files: [file]
-                                                                                        })
-                                                                                            } catch (e) {
-                                                                                                  if (e.name !== 'AbortError') exportToCSV(sheet, columns, rows)
-                                                                                                      }
-                                                                                                        } else if (navigator.share) {
-                                                                                                            try {
-                                                                                                                  await navigator.share({
-                                                                                                                          title: sheet.name,
-                                                                                                                                  text: `${sheet.name} — ${rows.length} rows, ${columns.length} columns`
-                                                                                                                                        })
-                                                                                                                                            } catch (e) {
-                                                                                                                                                  if (e.name !== 'AbortError') exportToCSV(sheet, columns, rows)
-                                                                                                                                                      }
-                                                                                                                                                        } else {
-                                                                                                                                                            exportToCSV(sheet, columns, rows)
-                                                                                                                                                              }
-                                                                                                                                                              }
+    const csvContent = columns.map(c => c.name).join(',') + '\n' +
+      rows.map(row =>
+        columns.map(col => {
+          const val = String(row.cells?.[col.id] || '')
+          return val.includes(',') ? `"${val}"` : val
+        }).join(',')
+      ).join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv' })
+    const file = new File([blob], `${sheet.name}.csv`, { type: 'text/csv' })
+    if (navigator.share && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ title: sheet.name, text: `Sharing: ${sheet.name}`, files: [file] })
+      } catch (e) {
+        if (e.name !== 'AbortError') exportToCSV(sheet, columns, rows)
+      }
+    } else if (navigator.share) {
+      try {
+        await navigator.share({ title: sheet.name, text: `${sheet.name} — ${rows.length} rows` })
+      } catch (e) {
+        if (e.name !== 'AbortError') exportToCSV(sheet, columns, rows)
+      }
+    } else {
+      exportToCSV(sheet, columns, rows)
+    }
+  }
 
   const displayRows = useMemo(() => {
     let result = [...rows]
@@ -253,17 +254,17 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
       )}
 
       {/* Header */}
-            <div className={`${headerBg} border-b px-4 py-3`}>
-                    <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2 flex-1 min-w-0">
-                                          <button
-                                                        onPointerDown={onBack}
-                                                                      className={`${isDark ? 'bg-gray-800 text-white' : 'bg-gray-200 text-gray-900'} text-xl font-bold w-10 h-10 flex items-center justify-center rounded-xl shrink-0 active:opacity-70`}
-                                                                                  >←</button>
+      <div className={`${headerBg} border-b px-4 py-3 shrink-0`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <button
+              onPointerDown={onBack}
+              className={`${isDark ? 'bg-gray-800 text-white' : 'bg-gray-200 text-gray-900'} text-xl font-bold w-10 h-10 flex items-center justify-center rounded-xl shrink-0 active:opacity-70`}
+            >←</button>
 
-                                                                                              {editingName ? (
-                                                                                                            <input
-                                                                                                                            autoFocus
+            {editingName ? (
+              <input
+                autoFocus
                 type="text"
                 value={sheetName}
                 onChange={e => setSheetName(e.target.value)}
@@ -289,9 +290,9 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
             >🔍</button>
             <button
               onPointerDown={handleShare}
-                className={`w-9 h-9 rounded-xl flex items-center justify-center text-base active:opacity-70 ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'}`}
-                  title="Share sheet"
-                  >↗️</button>
+              className={`w-9 h-9 rounded-xl flex items-center justify-center text-base active:opacity-70 ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'}`}
+              title="Share sheet"
+            >↗️</button>
             <button
               onPointerDown={() => exportToCSV(sheet, columns, rows)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold active:opacity-70 ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'}`}
@@ -343,110 +344,134 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
         </div>
       </div>
 
-      {/* Grid */}
-      <div className="flex-1 overflow-auto relative" style={{ minHeight: 0 }}>
-        <table className="border-collapse" style={{ minWidth: '100%' }}>
-          <thead className={`sticky top-0 z-20 ${gridHeaderBg}`} style={{ position: 'sticky', top: 0 }}>
-            <tr className={`${gridHeaderBg}`}>
-              <th
-                className={`${subtext} text-xs px-3 py-3 text-left sticky top-0 left-0 ${gridHeaderBg} z-30 border-b ${cellBorder}`}
-                  style={{ minWidth: '48px', position: 'sticky', top: 0 }}
-                  >        
-              #</th>
+      {/* Grid — split into frozen header + scrollable body */}
+      <div className="flex-1 flex flex-col overflow-hidden">
 
-              {columns.map((col, colIndex) => (
-                <th
-                  key={col.id}
-                    className={`text-xs font-semibold px-4 py-3 text-left border-l border-b ${cellBorder} ${gridHeaderBg}`}
-                      style={{ minWidth: '140px', position: 'sticky', top: 0 }}
-                      >
-                  <div className="flex items-center gap-1">
-                    <button
-                      onPointerDown={() => handleSort(col.id)}
-                      className="flex items-center gap-1 flex-1 text-left"
-                    >
-                      <span className={text}>
-                        {String.fromCharCode(65 + colIndex)} — {col.name}
-                      </span>
-                      <span className={subtext}>
-                        {col.type === 'number' ? '123' : col.type === 'date' ? '📅' : 'Aa'}
-                      </span>
-                      {sortConfig?.colId === col.id && (
-                        <span className="text-indigo-400">
-                          {sortConfig.dir === 'asc' ? '↑' : '↓'}
-                        </span>
-                      )}
-                    </button>
-                    <button
-                      onPointerDown={() => {
-                        setEditingColumn(col)
-                        setEditColData({ ...col })
-                      }}
-                      className="text-indigo-500 text-xs px-1 active:opacity-70"
-                    >✏️</button>
-                  </div>
-                </th>
+        {/* FROZEN HEADER — never scrolls vertically, syncs horizontal scroll with body */}
+        <div
+          ref={headerRef}
+          className={`${gridHeaderBg} shrink-0 overflow-x-hidden`}
+        >
+          <table className="border-collapse" style={{ minWidth: '100%', tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: '48px', minWidth: '48px' }} />
+              {columns.map(col => (
+                <col key={col.id} style={{ width: '140px', minWidth: '140px' }} />
               ))}
-
-              <th
-                className={`border-l border-b ${cellBorder} px-3 ${gridHeaderBg}`}
-                  style={{ minWidth: '60px', position: 'sticky', top: 0 }}
-                  >
-                <button
-                  onPointerDown={() => setShowAddColumn(true)}
-                  className="text-indigo-400 text-xs py-2 whitespace-nowrap active:opacity-70"
-                >+ Col</button>
-              </th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {displayRows.length === 0 && (
+              <col style={{ width: '60px', minWidth: '60px' }} />
+            </colgroup>
+            <thead>
               <tr>
-                <td colSpan={columns.length + 2} className={`text-center py-20 ${subtext} text-sm`}>
-                  {searchQuery ? 'No results found' : 'No rows yet. Tap + to add data.'}
-                </td>
-              </tr>
-            )}
-
-            {displayRows.map((row, index) => (
-              <tr key={row.id} className={`border-b ${cellBorder}`}>
-                <td
-                  className={`${subtext} text-xs px-2 py-3 sticky left-0 ${isDark ? 'bg-gray-950' : 'bg-gray-50'} z-10`}
-                  style={{ minWidth: '48px' }}
-                >
-                  <div className="flex flex-col items-center gap-1.5">
-                    <span>{index + 1}</span>
-                    <button
-                      onPointerDown={() => handleDuplicateRow(row.id)}
-                      className={`text-xs w-6 h-6 rounded flex items-center justify-center active:opacity-70 ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-200 text-gray-500'}`}
-                      title="Duplicate row"
-                    >⧉</button>
-                    <button
-                      onPointerDown={() => handleDeleteRow(row.id)}
-                      className="bg-red-950 text-red-400 text-xs w-6 h-6 rounded flex items-center justify-center active:opacity-70"
-                      title="Delete row"
-                    >×</button>
-                  </div>
-                </td>
-
-                {columns.map(col => (
-                  <Cell
+                <th className={`${subtext} text-xs px-3 py-3 text-left border-b ${cellBorder} ${gridHeaderBg}`}>
+                  #
+                </th>
+                {columns.map((col, colIndex) => (
+                  <th
                     key={col.id}
-                    row={row}
-                    col={col}
-                    rows={rows}
-                    columns={columns}
-                    onSave={handleCellSave}
-                    isDark={isDark}
-                  />
+                    className={`text-xs font-semibold px-4 py-3 text-left border-l border-b ${cellBorder} ${gridHeaderBg}`}
+                  >
+                    <div className="flex items-center gap-1">
+                      <button
+                        onPointerDown={() => handleSort(col.id)}
+                        className="flex items-center gap-1 flex-1 text-left truncate"
+                      >
+                        <span className={`${text} truncate`}>
+                          {String.fromCharCode(65 + colIndex)} — {col.name}
+                        </span>
+                        <span className={`${subtext} shrink-0`}>
+                          {col.type === 'number' ? '123' : col.type === 'date' ? '📅' : 'Aa'}
+                        </span>
+                        {sortConfig?.colId === col.id && (
+                          <span className="text-indigo-400 shrink-0">
+                            {sortConfig.dir === 'asc' ? '↑' : '↓'}
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        onPointerDown={() => {
+                          setEditingColumn(col)
+                          setEditColData({ ...col })
+                        }}
+                        className="text-indigo-500 text-xs px-1 active:opacity-70 shrink-0"
+                      >✏️</button>
+                    </div>
+                  </th>
                 ))}
-
-                <td className={`border-l ${cellBorder}`} style={{ minWidth: '60px' }} />
+                <th className={`border-l border-b ${cellBorder} px-3 ${gridHeaderBg}`}>
+                  <button
+                    onPointerDown={() => setShowAddColumn(true)}
+                    className="text-indigo-400 text-xs py-2 whitespace-nowrap active:opacity-70"
+                  >+ Col</button>
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+          </table>
+        </div>
+
+        {/* SCROLLABLE BODY — scrolls in both directions, syncs horizontal with header */}
+        <div
+          ref={bodyRef}
+          className="flex-1 overflow-auto"
+          onScroll={handleBodyScroll}
+        >
+          <table className="border-collapse" style={{ minWidth: '100%', tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: '48px', minWidth: '48px' }} />
+              {columns.map(col => (
+                <col key={col.id} style={{ width: '140px', minWidth: '140px' }} />
+              ))}
+              <col style={{ width: '60px', minWidth: '60px' }} />
+            </colgroup>
+            <tbody>
+              {displayRows.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={columns.length + 2}
+                    className={`text-center py-20 ${subtext} text-sm`}
+                  >
+                    {searchQuery ? 'No results found' : 'No rows yet. Tap + to add data.'}
+                  </td>
+                </tr>
+              )}
+
+              {displayRows.map((row, index) => (
+                <tr key={row.id} className={`border-b ${cellBorder}`}>
+                  <td
+                    className={`${subtext} text-xs px-2 py-3 ${isDark ? 'bg-gray-950' : 'bg-gray-50'}`}
+                  >
+                    <div className="flex flex-col items-center gap-1.5">
+                      <span>{index + 1}</span>
+                      <button
+                        onPointerDown={() => handleDuplicateRow(row.id)}
+                        className={`text-xs w-6 h-6 rounded flex items-center justify-center active:opacity-70 ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-200 text-gray-500'}`}
+                        title="Duplicate row"
+                      >⧉</button>
+                      <button
+                        onPointerDown={() => handleDeleteRow(row.id)}
+                        className="bg-red-950 text-red-400 text-xs w-6 h-6 rounded flex items-center justify-center active:opacity-70"
+                        title="Delete row"
+                      >×</button>
+                    </div>
+                  </td>
+
+                  {columns.map(col => (
+                    <Cell
+                      key={col.id}
+                      row={row}
+                      col={col}
+                      rows={rows}
+                      columns={columns}
+                      onSave={handleCellSave}
+                      isDark={isDark}
+                    />
+                  ))}
+
+                  <td className={`border-l ${cellBorder}`} />
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* FAB */}
@@ -553,7 +578,6 @@ function AddRowSheet({ columns, inputBg, subtext, onClose, onAdd }) {
     if (!hasData) return
     await onAdd(formData)
     setFormData({})
-    // Return focus to first column input after successful entry
     setTimeout(() => firstInputRef.current?.focus(), 50)
   }
 
