@@ -8,14 +8,14 @@ import Paywall from '../components/Paywall'
 import Cell from '../components/Cell'
 import {
   getColumns, getRows, createColumn, updateColumn,
-  deleteColumn, createRow, updateCell, deleteRow,
+  deleteColumn, createRow, insertRow, updateCell, deleteRow,
   duplicateRow, updateSheetName, canAddRow, db
 } from '../db'
 import { exportToCSV, exportToPDF, parseCSV } from '../utils/export'
 import { syncToCloud } from '../sync'
 import { getLimitMessage } from '../utils/limits'
 
-export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
+export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
   const { isDark } = useTheme()
 
   const [columns, setColumns] = useState([])
@@ -29,6 +29,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
   const [showAddColumn, setShowAddColumn] = useState(false)
   const [editingColumn, setEditingColumn] = useState(null)
   const [showSearch, setShowSearch] = useState(false)
+  const [rowMenu, setRowMenu] = useState(null)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [sortConfig, setSortConfig] = useState(null)
@@ -104,6 +105,28 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
     await loadData()
   }
 
+  async function handleInsertRow(rowId, position) {
+    const ok = await canAddRow(sheet.id)
+    if (!ok) { setPaywall('rows'); return }
+
+    const allRows = [...rows].sort((a, b) => a.createdAt - b.createdAt)
+    const idx = allRows.findIndex(r => r.id === rowId)
+
+    if (position === 'above') {
+      const afterRowId = idx > 0 ? allRows[idx - 1].id : null
+      const beforeRowId = rowId
+      await insertRow(sheet.id, afterRowId, beforeRowId)
+    } else {
+      const afterRowId = rowId
+      const beforeRowId = idx < allRows.length - 1 ? allRows[idx + 1].id : null
+      await insertRow(sheet.id, afterRowId, beforeRowId)
+    }
+
+    if (user) syncToCloud(user.id, db)
+    await loadData()
+    setRowMenu(null)
+  }
+
   async function handleUpdateColumn() {
     if (!editColData?.name.trim()) return
     await updateColumn(editColData.id, { name: editColData.name, type: editColData.type })
@@ -126,6 +149,30 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
     })
   }
 
+  async function handleInsertColumnLeft() {
+    const idx = columns.findIndex(c => c.id === editColData.id)
+    // Shift all columns from idx onwards up by 1
+    for (let i = columns.length - 1; i >= idx; i--) {
+      await updateColumn(columns[i].id, { position: i + 1 })
+    }
+    await createColumn(sheet.id, 'New Column', 'text', idx)
+    await loadData()
+    setEditingColumn(null)
+    setEditColData(null)
+  }
+
+  async function handleInsertColumnRight() {
+    const idx = columns.findIndex(c => c.id === editColData.id)
+    // Shift all columns after idx up by 1
+    for (let i = columns.length - 1; i > idx; i--) {
+      await updateColumn(columns[i].id, { position: i + 1 })
+    }
+    await createColumn(sheet.id, 'New Column', 'text', idx + 1)
+    await loadData()
+    setEditingColumn(null)
+    setEditColData(null)
+  }
+
   function handleSort(colId) {
     setSortConfig(prev => {
       if (prev?.colId === colId) {
@@ -135,7 +182,6 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
     })
   }
 
-  // Sync horizontal scroll between frozen header and body
   function handleBodyScroll(e) {
     if (headerRef.current) {
       headerRef.current.scrollLeft = e.target.scrollLeft
@@ -228,7 +274,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
 
   if (loading) {
     return (
-      <div className={`min-h-screen ${bg} flex items-center justify-center`}>
+      <div className={`h-screen ${bg} flex items-center justify-center`}>
         <div className="text-3xl animate-pulse">◎</div>
       </div>
     )
@@ -251,7 +297,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
           onClose={() => setPaywall(null)}
           onUpgrade={() => { setPaywall(null); onUpgrade() }}
           userEmail={user?.email}
-            userId={user?.id}
+          userId={user?.id}
         />
       )}
 
@@ -293,7 +339,6 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
             <button
               onPointerDown={handleShare}
               className={`w-9 h-9 rounded-xl flex items-center justify-center text-base active:opacity-70 ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'}`}
-              title="Share sheet"
             >↗️</button>
             <button
               onPointerDown={() => exportToCSV(sheet, columns, rows)}
@@ -346,10 +391,10 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
         </div>
       </div>
 
-      {/* Grid — split into frozen header + scrollable body */}
+      {/* Grid — frozen header + scrollable body */}
       <div className="flex-1 flex flex-col overflow-hidden">
 
-        {/* FROZEN HEADER — never scrolls vertically, syncs horizontal scroll with body */}
+        {/* Frozen header */}
         <div
           ref={headerRef}
           className={`${gridHeaderBg} shrink-0 overflow-x-hidden`}
@@ -364,9 +409,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
             </colgroup>
             <thead>
               <tr>
-                <th className={`${subtext} text-xs px-3 py-3 text-left border-b ${cellBorder} ${gridHeaderBg}`}>
-                  #
-                </th>
+                <th className={`${subtext} text-xs px-3 py-3 text-left border-b ${cellBorder} ${gridHeaderBg}`}>#</th>
                 {columns.map((col, colIndex) => (
                   <th
                     key={col.id}
@@ -410,11 +453,12 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
           </table>
         </div>
 
-        {/* SCROLLABLE BODY — scrolls in both directions, syncs horizontal with header */}
+        {/* Scrollable body */}
         <div
           ref={bodyRef}
           className="flex-1 overflow-auto"
           onScroll={handleBodyScroll}
+          onPointerDown={() => setRowMenu(null)}
         >
           <table className="border-collapse" style={{ minWidth: '100%', tableLayout: 'fixed' }}>
             <colgroup>
@@ -427,10 +471,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
             <tbody>
               {displayRows.length === 0 && (
                 <tr>
-                  <td
-                    colSpan={columns.length + 2}
-                    className={`text-center py-20 ${subtext} text-sm`}
-                  >
+                  <td colSpan={columns.length + 2} className={`text-center py-20 ${subtext} text-sm`}>
                     {searchQuery ? 'No results found' : 'No rows yet. Tap + to add data.'}
                   </td>
                 </tr>
@@ -438,22 +479,45 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
 
               {displayRows.map((row, index) => (
                 <tr key={row.id} className={`border-b ${cellBorder}`}>
-                  <td
-                    className={`${subtext} text-xs px-2 py-3 ${isDark ? 'bg-gray-950' : 'bg-gray-50'}`}
-                  >
+                  <td className={`${subtext} text-xs px-2 py-3 ${isDark ? 'bg-gray-950' : 'bg-gray-50'} relative`}>
                     <div className="flex flex-col items-center gap-1.5">
                       <span>{index + 1}</span>
                       <button
-                        onPointerDown={() => handleDuplicateRow(row.id)}
+                        onPointerDown={e => {
+                          e.stopPropagation()
+                          setRowMenu(rowMenu?.rowId === row.id ? null : { rowId: row.id, index })
+                        }}
                         className={`text-xs w-6 h-6 rounded flex items-center justify-center active:opacity-70 ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-200 text-gray-500'}`}
-                        title="Duplicate row"
-                      >⧉</button>
-                      <button
-                        onPointerDown={() => handleDeleteRow(row.id)}
-                        className="bg-red-950 text-red-400 text-xs w-6 h-6 rounded flex items-center justify-center active:opacity-70"
-                        title="Delete row"
-                      >×</button>
+                      >⋮</button>
                     </div>
+
+                    {/* Row actions menu */}
+                    {rowMenu?.rowId === row.id && (
+                      <div
+                        className={`absolute left-8 z-50 rounded-xl overflow-hidden shadow-2xl border ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}
+                        style={{
+                          minWidth: '160px',
+                          top: index < 3 ? '0' : 'auto',
+                          bottom: index < 3 ? 'auto' : '0'
+                        }}
+                        onPointerDown={e => e.stopPropagation()}
+                      >
+                        {[
+                          { label: '↑ Insert Above', action: () => handleInsertRow(row.id, 'above') },
+                          { label: '↓ Insert Below', action: () => handleInsertRow(row.id, 'below') },
+                          { label: '⧉ Duplicate', action: () => { handleDuplicateRow(row.id); setRowMenu(null) } },
+                          { label: '× Delete', action: () => { handleDeleteRow(row.id); setRowMenu(null) }, danger: true },
+                        ].map((item, i) => (
+                          <button
+                            key={i}
+                            onPointerDown={item.action}
+                            className={`w-full text-left px-4 py-3 text-sm active:opacity-70 ${
+                              i < 3 ? isDark ? 'border-b border-gray-800' : 'border-b border-gray-100' : ''
+                            } ${item.danger ? 'text-red-400' : isDark ? 'text-gray-300' : 'text-gray-700'}`}
+                          >{item.label}</button>
+                        ))}
+                      </div>
+                    )}
                   </td>
 
                   {columns.map(col => (
@@ -556,6 +620,14 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user }) {
             <option value="number">Number</option>
             <option value="date">Date</option>
           </select>
+          <button
+            onPointerDown={handleInsertColumnLeft}
+            className={`w-full font-semibold py-3 rounded-xl text-sm active:opacity-70 ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'}`}
+          >← Insert Column Left</button>
+          <button
+            onPointerDown={handleInsertColumnRight}
+            className={`w-full font-semibold py-3 rounded-xl text-sm active:opacity-70 ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'}`}
+          >Insert Column Right →</button>
           <button
             onPointerDown={handleUpdateColumn}
             className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl text-base active:bg-indigo-700"

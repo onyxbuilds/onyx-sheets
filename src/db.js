@@ -123,6 +123,46 @@ export async function createRow(sheetId, cellData) {
   return rowId
 }
 
+export async function insertRow(sheetId, afterRowId, beforeRowId) {
+  // Insert a blank row between afterRow and beforeRow
+  // If afterRowId is null, insert at the very beginning
+  // If beforeRowId is null, insert at the very end
+  const allRows = await db.rows
+    .where('sheetId').equals(sheetId)
+    .sortBy('createdAt')
+
+  let newCreatedAt
+
+  if (!afterRowId) {
+    // Insert before first row
+    const firstRow = allRows[0]
+    newCreatedAt = firstRow ? firstRow.createdAt - 1 : Date.now()
+  } else if (!beforeRowId) {
+    // Insert after last row
+    const lastRow = allRows[allRows.length - 1]
+    newCreatedAt = lastRow ? lastRow.createdAt + 1 : Date.now()
+  } else {
+    const afterRow = allRows.find(r => r.id === afterRowId)
+    const beforeRow = allRows.find(r => r.id === beforeRowId)
+    if (afterRow && beforeRow) {
+      newCreatedAt = Math.floor((afterRow.createdAt + beforeRow.createdAt) / 2)
+      if (newCreatedAt === afterRow.createdAt || newCreatedAt === beforeRow.createdAt) {
+        // No gap — shift all rows from beforeRow onwards
+        const idx = allRows.findIndex(r => r.id === beforeRowId)
+        for (let i = idx; i < allRows.length; i++) {
+          await db.rows.update(allRows[i].id, { createdAt: allRows[i].createdAt + 2 })
+        }
+        newCreatedAt = afterRow.createdAt + 1
+      }
+    } else {
+      newCreatedAt = Date.now()
+    }
+  }
+
+  const rowId = await db.rows.add({ sheetId, createdAt: newCreatedAt })
+  return rowId
+}
+
 export async function getRows(sheetId) {
   const rawRows = await db.rows.where("sheetId").equals(sheetId).toArray()
   const rows = rawRows.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
