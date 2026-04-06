@@ -140,13 +140,25 @@ const Cell = memo(function Cell({ row, col, rows, columns, onSave, isDark }) {
           {/* Formula autocomplete dropdown */}
           {suggestions.length > 0 && (
             <div
-              className={`absolute left-0 right-0 z-50 rounded-xl overflow-hidden shadow-2xl border ${
-                isDark
-                  ? 'bg-gray-900 border-gray-700'
-                  : 'bg-white border-gray-200'
-              }`}
-              style={{ top: '100%', minWidth: '220px' }}
-            >
+              ref={el => {
+                  if (!el) return
+                      const rect = el.getBoundingClientRect()
+                          const spaceBelow = window.innerHeight - rect.top
+                              if (spaceBelow < 200) {
+                                    el.style.top = 'auto'
+                                          el.style.bottom = '100%'
+                                              } else {
+                                                    el.style.top = '100%'
+                                                          el.style.bottom = 'auto'
+                                                              }
+                                                                }}
+                                                                  className={`absolute left-0 right-0 z-50 rounded-xl overflow-hidden shadow-2xl border ${
+                                                                      isDark
+                                                                            ? 'bg-gray-900 border-gray-700'
+                                                                                  : 'bg-white border-gray-200'
+                                                                                    }`}
+                                                                                      style={{ top: '100%', minWidth: '220px' }}
+                                                                                      >
               {suggestions.map((formula, index) => (
                 <button
                   key={formula.name}
