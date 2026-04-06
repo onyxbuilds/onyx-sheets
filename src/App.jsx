@@ -24,6 +24,7 @@ export default function App() {
   const [isFirstLaunch, setIsFirstLaunch] = useState(false)
   const [user, setUser] = useState(null)
   const [authReady, setAuthReady] = useState(false)
+  const [isPro, setIsPro] = useState(false)
 
   // First launch detection + set initial history state
   useEffect(() => {
@@ -35,11 +36,16 @@ export default function App() {
     window.history.replaceState({ screen: SCREENS.HOME }, '')
   }, [])
 
-  // Auth listener
+  // Auth listener + subscription check
   useEffect(() => {
-    const { data: { subscription } } = onAuthChange((user) => {
+    const { data: { subscription } } = onAuthChange(async (user) => {
       setUser(user)
       setAuthReady(true)
+      if (user) {
+        const { getSubscriptionStatus } = await import('./supabase')
+        const pro = await getSubscriptionStatus(user.id)
+        setIsPro(pro)
+      }
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -167,6 +173,7 @@ export default function App() {
       {screen === SCREENS.HOME && user && (
         <HomeScreen
           user={user}
+          isPro={isPro}
           onOpenSheet={handleOpenSheet}
           onUpgrade={handleUpgrade}
         />
@@ -177,6 +184,7 @@ export default function App() {
           onBack={handleBackToHome}
           onUpgrade={handleUpgrade}
           user={user}
+          isPro={isPro}
         />
       )}
       {screen === SCREENS.UPGRADE && (

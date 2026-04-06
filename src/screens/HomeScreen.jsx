@@ -285,6 +285,8 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
           message={getLimitMessage(paywall)}
           onClose={() => setPaywall(null)}
           onUpgrade={() => { setPaywall(null); onUpgrade() }}
+          userEmail={user?.email}
+            userId={user?.id}
         />
       )}
 
