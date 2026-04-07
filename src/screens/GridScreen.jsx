@@ -15,6 +15,8 @@ import { exportToCSV, exportToPDF, parseCSV } from '../utils/export'
 import { syncToCloud } from '../sync'
 import { getLimitMessage } from '../utils/limits'
 
+const MAX_HISTORY = 50
+
 export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
   const { isDark } = useTheme()
 
@@ -29,6 +31,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
   const [showAddColumn, setShowAddColumn] = useState(false)
   const [editingColumn, setEditingColumn] = useState(null)
   const [showSearch, setShowSearch] = useState(false)
+  const [showMoreMenu, setShowMoreMenu] = useState(false)
   const [rowMenu, setRowMenu] = useState(null)
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -39,6 +42,11 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
 
   const [newColumn, setNewColumn] = useState({ name: '', type: 'text' })
   const [editColData, setEditColData] = useState(null)
+
+  // Undo/Redo history
+  const [history, setHistory] = useState([]) // [{rowId, colId, oldValue, newValue}]
+  const [historyIndex, setHistoryIndex] = useState(-1)
+  const isUndoRedoing = useRef(false)
 
   const headerRef = useRef(null)
   const bodyRef = useRef(null)
@@ -61,17 +69,62 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
   }
 
   const handleCellSave = useCallback(async (rowId, colId, value) => {
+    // Get old value for undo history
+    const oldValue = rows.find(r => r.id === rowId)?.cells?.[colId] || ''
+
     setRows(prev => prev.map(row => {
       if (row.id !== rowId) return row
       return { ...row, cells: { ...row.cells, [colId]: value } }
     }))
+
     try {
       await updateCell(rowId, colId, value)
       if (user) syncToCloud(user.id, db)
+
+      // Push to history only if value actually changed and not from undo/redo
+      if (!isUndoRedoing.current && value !== oldValue) {
+        setHistory(prev => {
+          // Truncate any redo history ahead of current index
+          const newHistory = prev.slice(0, historyIndex + 1)
+          newHistory.push({ rowId, colId, oldValue, newValue: value })
+          // Cap at MAX_HISTORY
+          if (newHistory.length > MAX_HISTORY) newHistory.shift()
+          return newHistory
+        })
+        setHistoryIndex(prev => Math.min(prev + 1, MAX_HISTORY - 1))
+      }
     } catch (e) {
       loadData()
     }
-  }, [user])
+  }, [user, rows, historyIndex])
+
+  async function handleUndo() {
+    if (historyIndex < 0) return
+    const entry = history[historyIndex]
+    isUndoRedoing.current = true
+    await updateCell(entry.rowId, entry.colId, entry.oldValue)
+    setRows(prev => prev.map(row => {
+      if (row.id !== entry.rowId) return row
+      return { ...row, cells: { ...row.cells, [entry.colId]: entry.oldValue } }
+    }))
+    setHistoryIndex(prev => prev - 1)
+    if (user) syncToCloud(user.id, db)
+    isUndoRedoing.current = false
+  }
+
+  async function handleRedo() {
+    if (historyIndex >= history.length - 1) return
+    const entry = history[historyIndex + 1]
+    isUndoRedoing.current = true
+    await updateCell(entry.rowId, entry.colId, entry.newValue)
+    setRows(prev => prev.map(row => {
+      if (row.id !== entry.rowId) return row
+      return { ...row, cells: { ...row.cells, [entry.colId]: entry.newValue } }
+    }))
+    setHistoryIndex(prev => prev + 1)
+    if (user) syncToCloud(user.id, db)
+    isUndoRedoing.current = false
+  }
 
   async function handleAddRow(formData) {
     const ok = await canAddRow(sheet.id)
@@ -108,20 +161,15 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
   async function handleInsertRow(rowId, position) {
     const ok = await canAddRow(sheet.id)
     if (!ok) { setPaywall('rows'); return }
-
     const allRows = [...rows].sort((a, b) => a.createdAt - b.createdAt)
     const idx = allRows.findIndex(r => r.id === rowId)
-
     if (position === 'above') {
       const afterRowId = idx > 0 ? allRows[idx - 1].id : null
-      const beforeRowId = rowId
-      await insertRow(sheet.id, afterRowId, beforeRowId)
+      await insertRow(sheet.id, afterRowId, rowId)
     } else {
-      const afterRowId = rowId
       const beforeRowId = idx < allRows.length - 1 ? allRows[idx + 1].id : null
-      await insertRow(sheet.id, afterRowId, beforeRowId)
+      await insertRow(sheet.id, rowId, beforeRowId)
     }
-
     if (user) syncToCloud(user.id, db)
     await loadData()
     setRowMenu(null)
@@ -151,7 +199,6 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
 
   async function handleInsertColumnLeft() {
     const idx = columns.findIndex(c => c.id === editColData.id)
-    // Shift all columns from idx onwards up by 1
     for (let i = columns.length - 1; i >= idx; i--) {
       await updateColumn(columns[i].id, { position: i + 1 })
     }
@@ -163,7 +210,6 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
 
   async function handleInsertColumnRight() {
     const idx = columns.findIndex(c => c.id === editColData.id)
-    // Shift all columns after idx up by 1
     for (let i = columns.length - 1; i > idx; i--) {
       await updateColumn(columns[i].id, { position: i + 1 })
     }
@@ -209,6 +255,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
     }
     if (user) syncToCloud(user.id, db)
     await loadData()
+    setShowMoreMenu(false)
   }
 
   async function handleShare() {
@@ -262,6 +309,9 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
     return result
   }, [rows, columns, searchQuery, sortConfig])
 
+  const canUndo = historyIndex >= 0
+  const canRedo = historyIndex < history.length - 1
+
   const bg = isDark ? 'bg-gray-950' : 'bg-gray-50'
   const headerBg = isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'
   const gridHeaderBg = isDark ? 'bg-gray-900' : 'bg-gray-100'
@@ -271,6 +321,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
   const inputBg = isDark
     ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500'
     : 'bg-gray-100 border-gray-300 text-gray-900 placeholder-gray-400'
+  const btnBg = isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'
 
   if (loading) {
     return (
@@ -304,6 +355,8 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
       {/* Header */}
       <div className={`${headerBg} border-b px-4 py-3 shrink-0`}>
         <div className="flex items-center justify-between">
+
+          {/* Left — back + sheet name */}
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <button
               onPointerDown={onBack}
@@ -331,31 +384,79 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
             )}
           </div>
 
+          {/* Right — action buttons */}
           <div className="flex items-center gap-1 ml-2">
+
+            {/* Undo */}
             <button
-              onPointerDown={() => setShowSearch(s => !s)}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center text-base active:opacity-70 ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}
+              onPointerDown={handleUndo}
+              disabled={!canUndo}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center text-base active:opacity-70 ${
+                canUndo ? btnBg : isDark ? 'bg-gray-900 text-gray-700' : 'bg-gray-50 text-gray-300'
+              }`}
+              title="Undo"
+            >↩</button>
+
+            {/* Redo */}
+            <button
+              onPointerDown={handleRedo}
+              disabled={!canRedo}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center text-base active:opacity-70 ${
+                canRedo ? btnBg : isDark ? 'bg-gray-900 text-gray-700' : 'bg-gray-50 text-gray-300'
+              }`}
+              title="Redo"
+            >↪</button>
+
+            {/* Search */}
+            <button
+              onPointerDown={() => { setShowSearch(s => !s); setShowMoreMenu(false) }}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center text-base active:opacity-70 ${btnBg}`}
             >🔍</button>
+
+            {/* Share */}
             <button
               onPointerDown={handleShare}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center text-base active:opacity-70 ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'}`}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center text-base active:opacity-70 ${btnBg}`}
             >↗️</button>
-            <button
-              onPointerDown={() => exportToCSV(sheet, columns, rows)}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold active:opacity-70 ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'}`}
-            >CSV</button>
-            <button
-              onPointerDown={() => exportToPDF(sheet, columns, rows)}
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold bg-red-900 text-red-300 active:opacity-70"
-            >PDF</button>
-            <button
-              onPointerDown={() => setPaywall('excelExport')}
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold bg-green-900 text-green-300 active:opacity-70"
-            >XLS</button>
-            <label
-              className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold active:opacity-70 cursor-pointer ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'}`}
-              title="Import CSV"
-            >↑<input type="file" accept=".csv" className="hidden" onChange={handleCSVImport} /></label>
+
+            {/* More ⋮ */}
+            <div className="relative">
+              <button
+                onPointerDown={() => { setShowMoreMenu(m => !m); setShowSearch(false) }}
+                className={`w-9 h-9 rounded-xl flex items-center justify-center text-base active:opacity-70 ${showMoreMenu ? 'bg-indigo-600 text-white' : btnBg}`}
+              >⋮</button>
+
+              {showMoreMenu && (
+                <div
+                  className={`absolute right-0 top-11 z-50 rounded-2xl overflow-hidden shadow-2xl border ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}
+                  style={{ minWidth: '180px' }}
+                  onPointerDown={e => e.stopPropagation()}
+                >
+                  {[
+                    { label: '📄 Export CSV', action: () => { exportToCSV(sheet, columns, rows); setShowMoreMenu(false) } },
+                    { label: '📕 Export PDF', action: () => { exportToPDF(sheet, columns, rows); setShowMoreMenu(false) } },
+                    { label: '📗 Export Excel', action: () => { setPaywall('excelExport'); setShowMoreMenu(false) }, pro: true },
+                  ].map((item, i) => (
+                    <button
+                      key={i}
+                      onPointerDown={item.action}
+                      className={`w-full text-left px-4 py-3 text-sm active:opacity-70 flex items-center justify-between ${
+                        i < 2 ? isDark ? 'border-b border-gray-800' : 'border-b border-gray-100' : ''
+                      } ${isDark ? 'text-gray-300' : 'text-gray-700'}`}
+                    >
+                      {item.label}
+                      {item.pro && <span className="text-xs bg-indigo-600 text-white px-2 py-0.5 rounded-lg">Pro</span>}
+                    </button>
+                  ))}
+                  <label
+                    className={`w-full text-left px-4 py-3 text-sm flex items-center cursor-pointer ${isDark ? 'text-gray-300 border-t border-gray-800' : 'text-gray-700 border-t border-gray-100'}`}
+                  >
+                    📥 Import CSV
+                    <input type="file" accept=".csv" className="hidden" onChange={handleCSVImport} />
+                  </label>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -392,51 +493,39 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
       </div>
 
       {/* Grid — frozen header + scrollable body */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div
+        className="flex-1 flex flex-col overflow-hidden"
+        onPointerDown={() => { setShowMoreMenu(false); setRowMenu(null) }}
+      >
 
         {/* Frozen header */}
-        <div
-          ref={headerRef}
-          className={`${gridHeaderBg} shrink-0 overflow-x-hidden`}
-        >
+        <div ref={headerRef} className={`${gridHeaderBg} shrink-0 overflow-x-hidden`}>
           <table className="border-collapse" style={{ minWidth: '100%', tableLayout: 'fixed' }}>
             <colgroup>
               <col style={{ width: '48px', minWidth: '48px' }} />
-              {columns.map(col => (
-                <col key={col.id} style={{ width: '140px', minWidth: '140px' }} />
-              ))}
+              {columns.map(col => <col key={col.id} style={{ width: '140px', minWidth: '140px' }} />)}
               <col style={{ width: '60px', minWidth: '60px' }} />
             </colgroup>
             <thead>
               <tr>
                 <th className={`${subtext} text-xs px-3 py-3 text-left border-b ${cellBorder} ${gridHeaderBg}`}>#</th>
                 {columns.map((col, colIndex) => (
-                  <th
-                    key={col.id}
-                    className={`text-xs font-semibold px-4 py-3 text-left border-l border-b ${cellBorder} ${gridHeaderBg}`}
-                  >
+                  <th key={col.id} className={`text-xs font-semibold px-4 py-3 text-left border-l border-b ${cellBorder} ${gridHeaderBg}`}>
                     <div className="flex items-center gap-1">
                       <button
                         onPointerDown={() => handleSort(col.id)}
                         className="flex items-center gap-1 flex-1 text-left truncate"
                       >
-                        <span className={`${text} truncate`}>
-                          {String.fromCharCode(65 + colIndex)} — {col.name}
-                        </span>
+                        <span className={`${text} truncate`}>{String.fromCharCode(65 + colIndex)} — {col.name}</span>
                         <span className={`${subtext} shrink-0`}>
                           {col.type === 'number' ? '123' : col.type === 'date' ? '📅' : 'Aa'}
                         </span>
                         {sortConfig?.colId === col.id && (
-                          <span className="text-indigo-400 shrink-0">
-                            {sortConfig.dir === 'asc' ? '↑' : '↓'}
-                          </span>
+                          <span className="text-indigo-400 shrink-0">{sortConfig.dir === 'asc' ? '↑' : '↓'}</span>
                         )}
                       </button>
                       <button
-                        onPointerDown={() => {
-                          setEditingColumn(col)
-                          setEditColData({ ...col })
-                        }}
+                        onPointerDown={() => { setEditingColumn(col); setEditColData({ ...col }) }}
                         className="text-indigo-500 text-xs px-1 active:opacity-70 shrink-0"
                       >✏️</button>
                     </div>
@@ -458,14 +547,11 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
           ref={bodyRef}
           className="flex-1 overflow-auto"
           onScroll={handleBodyScroll}
-          onPointerDown={() => setRowMenu(null)}
         >
           <table className="border-collapse" style={{ minWidth: '100%', tableLayout: 'fixed' }}>
             <colgroup>
               <col style={{ width: '48px', minWidth: '48px' }} />
-              {columns.map(col => (
-                <col key={col.id} style={{ width: '140px', minWidth: '140px' }} />
-              ))}
+              {columns.map(col => <col key={col.id} style={{ width: '140px', minWidth: '140px' }} />)}
               <col style={{ width: '60px', minWidth: '60px' }} />
             </colgroup>
             <tbody>
@@ -491,15 +577,10 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
                       >⋮</button>
                     </div>
 
-                    {/* Row actions menu */}
                     {rowMenu?.rowId === row.id && (
                       <div
                         className={`absolute left-8 z-50 rounded-xl overflow-hidden shadow-2xl border ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}
-                        style={{
-                          minWidth: '160px',
-                          top: index < 3 ? '0' : 'auto',
-                          bottom: index < 3 ? 'auto' : '0'
-                        }}
+                        style={{ minWidth: '160px', top: index < 3 ? '0' : 'auto', bottom: index < 3 ? 'auto' : '0' }}
                         onPointerDown={e => e.stopPropagation()}
                       >
                         {[
