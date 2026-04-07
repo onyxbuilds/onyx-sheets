@@ -10,6 +10,8 @@ const FORMULAS = [
   { name: 'MAX', description: 'Largest value', example: '=MAX(A1:A10)' },
 ]
 
+const TAP_THRESHOLD = 6 // px — movement beyond this is a scroll, not a tap
+
 const Cell = memo(function Cell({ row, col, rows, columns, onSave, isDark }) {
   const [isEditing, setIsEditing] = useState(false)
   const [localValue, setLocalValue] = useState('')
@@ -17,6 +19,7 @@ const Cell = memo(function Cell({ row, col, rows, columns, onSave, isDark }) {
   const [isNumericMode, setIsNumericMode] = useState(true)
   const inputRef = useRef(null)
   const inputType = useRef('text')
+  const pointerStart = useRef(null)
 
   const rawValue = row.cells?.[col.id] || ''
   const displayValue = col.type === 'date'
@@ -42,6 +45,21 @@ const Cell = memo(function Cell({ row, col, rows, columns, onSave, isDark }) {
         inputRef.current?.showPicker?.()
       }
     }, 0)
+  }
+
+  function handlePointerDown(e) {
+    pointerStart.current = { x: e.clientX, y: e.clientY }
+  }
+
+  function handlePointerUp(e) {
+    if (!pointerStart.current) return
+    const dx = Math.abs(e.clientX - pointerStart.current.x)
+    const dy = Math.abs(e.clientY - pointerStart.current.y)
+    pointerStart.current = null
+    // Only open if it was a genuine tap (not a scroll)
+    if (dx < TAP_THRESHOLD && dy < TAP_THRESHOLD) {
+      handleOpen()
+    }
   }
 
   function handleChange(e) {
@@ -195,8 +213,9 @@ const Cell = memo(function Cell({ row, col, rows, columns, onSave, isDark }) {
         </div>
       ) : (
         <div
-          onPointerDown={handleOpen}
-          className={`px-4 py-3 text-sm cursor-text min-h-12 flex items-center ${
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          className={`px-4 py-3 text-sm cursor-text min-h-12 flex items-center select-none ${
             isError
               ? 'text-red-400 font-mono'
               : isFormulaCell

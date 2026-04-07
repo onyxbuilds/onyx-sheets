@@ -332,7 +332,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
   }
 
   return (
-    <div className={`h-screen ${bg} ${text} flex flex-col overflow-hidden`}>
+    <div className={`h-screen ${bg} ${text} flex flex-col overflow-hidden`} style={{ height: '100dvh' }}>
 
       {confirm && (
         <ConfirmDialog
@@ -565,7 +565,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
 
               {displayRows.map((row, index) => (
                 <tr key={row.id} className={`border-b ${cellBorder}`}>
-                  <td className={`${subtext} text-xs px-2 py-3 ${isDark ? 'bg-gray-950' : 'bg-gray-50'} relative`}>
+                  <td className={`${subtext} text-xs px-2 py-3 ${isDark ? 'bg-gray-950' : 'bg-gray-50'} relative sticky left-0 z-10`}>
                     <div className="flex flex-col items-center gap-1.5">
                       <span>{index + 1}</span>
                       <button
