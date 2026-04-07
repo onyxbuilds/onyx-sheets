@@ -51,18 +51,20 @@ export default function SignInScreen() {
           Continue with Google
         </button>
 
+        {/* Legal links */}
         <p className={`${subtext} text-xs text-center`}>
-            By continuing, you agree to our{' '}
-              <button
-                  onPointerDown={e => { e.stopPropagation(); window.open('/terms.html', '_blank') }}
-                      className="text-indigo-400 underline active:opacity-70"
-                        >Terms of Service</button>
-                          {' '}and{' '}
-                            <button
-                                onPointerDown={e => { e.stopPropagation(); window.open('/privacy.html', '_blank') }}
-                                    className="text-indigo-400 underline active:opacity-70"
-                                      >Privacy Policy</button>.
-                                      </p>
+          By continuing, you agree to our{' '}
+          <span
+            onClick={() => window.open('/terms.html', '_blank')}
+            className="text-indigo-400 underline cursor-pointer"
+          >Terms of Service</span>
+          {' '}and{' '}
+          <span
+            onClick={() => window.open('/privacy.html', '_blank')}
+            className="text-indigo-400 underline cursor-pointer"
+          >Privacy Policy</span>.
+        </p>
+
       </div>
     </div>
   )
