@@ -1,5 +1,5 @@
 // — HOME SCREEN
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTheme } from '../theme'
 import BottomSheet from '../components/BottomSheet'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -14,71 +14,31 @@ import { signOut } from '../auth'
 import { hasReachedSheetLimit, getLimitMessage } from '../utils/limits'
 
 const TEMPLATES = [
-  {
-    id: 'blank',
-    name: 'Blank Sheet',
-    icon: '📄',
-    columns: [{ name: 'Item', type: 'text' }]
-  },
-  {
-    id: 'budget',
-    name: 'Monthly Budget',
-    icon: '💰',
-    columns: [
-      { name: 'Date', type: 'date' },
-      { name: 'Item', type: 'text' },
-      { name: 'Category', type: 'text' },
-      { name: 'Amount', type: 'number' }
-    ]
-  },
-  {
-    id: 'expense',
-    name: 'Expense Tracker',
-    icon: '🧾',
-    columns: [
-      { name: 'Date', type: 'date' },
-      { name: 'Description', type: 'text' },
-      { name: 'Amount', type: 'number' },
-      { name: 'Paid By', type: 'text' }
-    ]
-  },
-  {
-    id: 'inventory',
-    name: 'Inventory',
-    icon: '📦',
-    columns: [
-      { name: 'Item', type: 'text' },
-      { name: 'Quantity', type: 'number' },
-      { name: 'Buying Price', type: 'number' },
-      { name: 'Selling Price', type: 'number' }
-    ]
-  },
-  {
-    id: 'sales',
-    name: 'Sales Log',
-    icon: '📈',
-    columns: [
-      { name: 'Date', type: 'date' },
-      { name: 'Customer', type: 'text' },
-      { name: 'Item', type: 'text' },
-      { name: 'Amount', type: 'number' },
-      { name: 'Status', type: 'text' }
-    ]
-  },
-  {
-    id: 'todo',
-    name: 'To-Do List',
-    icon: '✅',
-    columns: [
-      { name: 'Task', type: 'text' },
-      { name: 'Priority', type: 'text' },
-      { name: 'Due Date', type: 'date' },
-      { name: 'Status', type: 'text' }
-    ]
-  }
+  { id: 'blank', name: 'Blank Sheet', icon: '📄', columns: [{ name: 'Item', type: 'text' }] },
+  { id: 'budget', name: 'Monthly Budget', icon: '💰', columns: [
+    { name: 'Date', type: 'date' }, { name: 'Item', type: 'text' },
+    { name: 'Category', type: 'text' }, { name: 'Amount', type: 'number' }
+  ]},
+  { id: 'expense', name: 'Expense Tracker', icon: '🧾', columns: [
+    { name: 'Date', type: 'date' }, { name: 'Description', type: 'text' },
+    { name: 'Amount', type: 'number' }, { name: 'Paid By', type: 'text' }
+  ]},
+  { id: 'inventory', name: 'Inventory', icon: '📦', columns: [
+    { name: 'Item', type: 'text' }, { name: 'Quantity', type: 'number' },
+    { name: 'Buying Price', type: 'number' }, { name: 'Selling Price', type: 'number' }
+  ]},
+  { id: 'sales', name: 'Sales Log', icon: '📈', columns: [
+    { name: 'Date', type: 'date' }, { name: 'Customer', type: 'text' },
+    { name: 'Item', type: 'text' }, { name: 'Amount', type: 'number' },
+    { name: 'Status', type: 'text' }
+  ]},
+  { id: 'todo', name: 'To-Do List', icon: '✅', columns: [
+    { name: 'Task', type: 'text' }, { name: 'Priority', type: 'text' },
+    { name: 'Due Date', type: 'date' }, { name: 'Status', type: 'text' }
+  ]}
 ]
 
-export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
+export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
   const { isDark, toggleTheme } = useTheme()
   const [sheets, setSheets] = useState([])
   const [binSheets, setBinSheets] = useState([])
@@ -96,12 +56,13 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
   const [creating, setCreating] = useState(false)
   const [selectedTemplate, setSelectedTemplate] = useState(null)
   const [deleting, setDeleting] = useState(false)
+  const [isListening, setIsListening] = useState(false)
+  const recognitionRef = useRef(null)
 
   useEffect(() => { initData() }, [])
 
   async function initData() {
     setLoading(true)
-    // Auto-cleanup bin sheets older than 30 days
     await cleanupExpiredBinSheets()
     if (user) {
       setSyncing(true)
@@ -114,9 +75,8 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
   }
 
   async function loadSheets() {
-    const data = await getSheets()
+    const [data, bin] = await Promise.all([getSheets(), getBinSheets()])
     setSheets(data)
-    const bin = await getBinSheets()
     setBinSheets(bin)
   }
 
@@ -133,10 +93,15 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
     setColumns(columns.filter(c => c.id !== id))
   }
 
+  function getDaysRemaining(deletedAt) {
+    const days = Math.ceil((deletedAt + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (24 * 60 * 60 * 1000))
+    return Math.max(0, days)
+  }
+
   async function handleCreateSheet() {
     if (creating) return
-    if (!newSheetName.trim()) setNewSheetName('New Sheet')
-    if (hasReachedSheetLimit(sheets.length, false)) {
+    const finalName = newSheetName.trim() || 'New Sheet'
+    if (hasReachedSheetLimit(sheets.length, isPro)) {
       setShowCreate(false)
       setPaywall('sheets')
       return
@@ -147,7 +112,7 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
     if (validColumns.length === 0) return
     setCreating(true)
     try {
-      const sheetId = await createSheet(newSheetName.trim() || 'New Sheet')
+      const sheetId = await createSheet(finalName)
       for (let i = 0; i < validColumns.length; i++) {
         await createColumn(sheetId, validColumns[i].name, validColumns[i].type, i)
       }
@@ -155,6 +120,7 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
       await loadSheets()
       setNewSheetName('')
       setColumns([{ id: 1, name: 'Item', type: 'text' }])
+      setSelectedTemplate(null)
       setShowCreate(false)
     } finally {
       setCreating(false)
@@ -183,7 +149,7 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
   }
 
   async function handleRestoreSheet(sheetId, sheetName) {
-    if (hasReachedSheetLimit(sheets.length, false)) {
+    if (hasReachedSheetLimit(sheets.length, isPro)) {
       setPaywall('sheets')
       return
     }
@@ -254,9 +220,38 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
     }, 2000)
   }
 
-  function getDaysRemaining(deletedAt) {
-    const days = Math.ceil((deletedAt + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (24 * 60 * 60 * 1000))
-    return Math.max(0, days)
+  function handleVoiceInput() {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      alert('Voice input is not supported on this browser. Try Chrome.')
+      return
+    }
+    if (isListening) {
+      recognitionRef.current?.stop()
+      setIsListening(false)
+      return
+    }
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    const recognition = new SpeechRecognition()
+    recognitionRef.current = recognition
+    recognition.lang = navigator.language || 'en-IN'
+    recognition.continuous = true
+    recognition.interimResults = false
+    recognition.onstart = () => setIsListening(true)
+    recognition.onresult = (e) => {
+      const transcript = Array.from(e.results)
+        .map(result => result[0].transcript)
+        .join(' ')
+      setFeedbackText(prev => prev ? prev + ' ' + transcript : transcript)
+    }
+    recognition.onerror = (e) => {
+      console.error('Speech error:', e.error)
+      setIsListening(false)
+      if (e.error === 'not-allowed') {
+        alert('Microphone access denied. Please allow microphone permission and try again.')
+      }
+    }
+    recognition.onend = () => setIsListening(false)
+    recognition.start()
   }
 
   const bg = isDark ? 'bg-gray-950' : 'bg-gray-50'
@@ -286,7 +281,7 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
           onClose={() => setPaywall(null)}
           onUpgrade={() => { setPaywall(null); onUpgrade() }}
           userEmail={user?.email}
-            userId={user?.id}
+          userId={user?.id}
         />
       )}
 
@@ -299,33 +294,25 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
               <p className={`text-xs ${subtext} mt-0.5 truncate max-w-48`}>{user.email}</p>
             )}
           </div>
-
           <div className="flex items-center gap-1.5">
             <button
               onPointerDown={toggleTheme}
               className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm ${btnBg} active:opacity-70`}
-              title="Toggle theme"
             >{isDark ? '☀️' : '🌙'}</button>
-
             {user && (
               <button
                 onPointerDown={handleManualSync}
                 className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm ${btnBg} active:opacity-70`}
-                title="Sync to cloud"
               >{syncing ? '⏳' : '☁️'}</button>
             )}
-
             <button
               onPointerDown={() => setShowFeedback(true)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm ${btnBg} active:opacity-70`}
-              title="Send feedback"
             >💬</button>
-
             {user && (
               <button
                 onPointerDown={handleSignOut}
                 className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm ${btnBg} active:opacity-70`}
-                title="Sign out"
               >🚪</button>
             )}
           </div>
@@ -347,7 +334,6 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
               />
             </div>
           </div>
-
           <button
             onPointerDown={() => setShowCreate(true)}
             className="bg-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl active:bg-indigo-700 shrink-0"
@@ -407,14 +393,13 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
               <span className="text-sm font-medium">Bin ({binSheets.length})</span>
               <span className="text-xs ml-auto">{showBin ? '▲' : '▼'}</span>
             </button>
-
             {showBin && (
               <div className="space-y-2 mt-2">
                 <p className={`text-xs ${subtext} opacity-60 mb-3`}>
                   Deleted sheets are permanently removed after 30 days
                 </p>
                 {binSheets.map(sheet => (
-                  <div key={sheet.id} className={`${isDark ? 'bg-gray-900/60 border-gray-800' : 'bg-gray-100 border-gray-200'} border rounded-2xl p-4`}>
+                  <div key={sheet.id} className={`${isDark ? 'bg-gray-900 border-gray-800' : 'bg-gray-100 border-gray-200'} border rounded-2xl p-4`}>
                     <div className="flex items-center justify-between">
                       <div className="min-w-0 flex-1">
                         <h3 className={`font-medium text-sm truncate ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>{sheet.name}</h3>
@@ -445,19 +430,18 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
 
       {/* Create Sheet */}
       {showCreate && (
-        <BottomSheet title="New Sheet" onClose={() => { setShowCreate(false); setSelectedTemplate(null) }} tall>
+        <BottomSheet title="New Sheet" onClose={() => { setShowCreate(false); setSelectedTemplate(null); setNewSheetName('') }} tall>
           <input
             autoFocus
             type="text"
-            placeholder="Sheet name e.g. Jan Sales"
+            placeholder="Sheet name (or leave blank for 'New Sheet')"
             value={newSheetName}
             onChange={e => setNewSheetName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleCreateSheet()}
             className={`w-full ${inputBg} rounded-xl px-4 py-3 text-base outline-none border focus:border-indigo-500`}
           />
 
-          <p className={`${subtext} text-sm font-medium`}>Choose a template</p>
-
+          <p className={`text-sm font-medium ${text}`}>Choose a template</p>
           <div className="grid grid-cols-2 gap-2">
             {TEMPLATES.map(template => (
               <button
@@ -473,15 +457,13 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
                 className={`p-3 rounded-xl border text-left transition-all ${
                   (template.id === 'blank' && !selectedTemplate) ||
                   selectedTemplate?.id === template.id
-                    ? isDark ? 'border-indigo-500 bg-indigo-950' : 'border-indigo-500 bg-indigo-100'
-                    : isDark ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-gray-50'
+                    ? isDark ? 'border-indigo-500 bg-indigo-950 text-white' : 'border-indigo-500 bg-indigo-100 text-gray-900'
+                    : isDark ? 'border-gray-700 bg-gray-800 text-white' : 'border-gray-200 bg-white text-gray-900'
                 }`}
               >
                 <div className="text-xl mb-1">{template.icon}</div>
-                <div className={`text-xs font-semibold ${text}`}>{template.name}</div>
-                <div className={`text-xs ${subtext} mt-0.5`}>
-                  {template.columns.length} cols
-                </div>
+                <div className="text-xs font-semibold">{template.name}</div>
+                <div className={`text-xs mt-0.5 ${subtext}`}>{template.columns.length} cols</div>
               </button>
             ))}
           </div>
@@ -551,14 +533,32 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
           ) : (
             <>
               <p className={`${subtext} text-sm mb-3`}>Found a bug? Have a suggestion? We read everything.</p>
-              <textarea
-                autoFocus
-                rows={5}
-                placeholder="Tell us what's on your mind..."
-                value={feedbackText}
-                onChange={e => setFeedbackText(e.target.value)}
-                className={`w-full ${inputBg} rounded-xl px-4 py-3 text-base outline-none border focus:border-indigo-500 resize-none`}
-              />
+              <div className="relative">
+                <textarea
+                  autoFocus
+                  rows={5}
+                  placeholder="Tell us what's on your mind..."
+                  value={feedbackText}
+                  onChange={e => setFeedbackText(e.target.value)}
+                  className={`w-full ${inputBg} rounded-xl px-4 py-3 pr-12 text-base outline-none border focus:border-indigo-500 resize-none`}
+                />
+                <button
+                  onPointerDown={handleVoiceInput}
+                  className={`absolute right-3 bottom-3 w-8 h-8 rounded-xl flex items-center justify-center text-base active:opacity-70 ${
+                    isListening
+                      ? 'bg-red-600 text-white animate-pulse'
+                      : isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-600'
+                  }`}
+                  title="Voice input (Beta)"
+                >
+                  {isListening ? '⏹' : '🎤'}
+                </button>
+              </div>
+              {isListening && (
+                <p className={`text-xs text-center ${isDark ? 'text-indigo-400' : 'text-indigo-600'} animate-pulse`}>
+                  Listening... tap ⏹ to stop · Beta
+                </p>
+              )}
               <button
                 onPointerDown={handleFeedbackSubmit}
                 className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl text-base active:bg-indigo-700"
@@ -567,6 +567,7 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade }) {
           )}
         </BottomSheet>
       )}
+
     </div>
   )
 }
