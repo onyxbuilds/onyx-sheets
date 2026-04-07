@@ -40,7 +40,7 @@ export default function SignInScreen() {
 
         {/* Sign in button */}
         <button
-          onPointerDown={signInWithGoogle}
+          onClick={signInWithGoogle}
           className="w-full bg-white text-gray-900 font-semibold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-lg active:opacity-80 text-base"
         >
           <img
@@ -54,12 +54,12 @@ export default function SignInScreen() {
         <p className={`${subtext} text-xs text-center`}>
             By continuing, you agree to our{' '}
               <button
-                  onPointerDown={() => window.open('/terms.html', '_blank')}
+                  onPointerDown={e => { e.stopPropagation(); window.open('/terms.html', '_blank') }}
                       className="text-indigo-400 underline active:opacity-70"
                         >Terms of Service</button>
                           {' '}and{' '}
                             <button
-                                onPointerDown={() => window.open('/privacy.html', '_blank')}
+                                onPointerDown={e => { e.stopPropagation(); window.open('/privacy.html', '_blank') }}
                                     className="text-indigo-400 underline active:opacity-70"
                                       >Privacy Policy</button>.
                                       </p>
