@@ -52,8 +52,17 @@ export default function SignInScreen() {
         </button>
 
         <p className={`${subtext} text-xs text-center`}>
-          By continuing, you agree to our Terms of Service and Privacy Policy.
-        </p>
+            By continuing, you agree to our{' '}
+              <button
+                  onPointerDown={() => window.open('/terms.html', '_blank')}
+                      className="text-indigo-400 underline active:opacity-70"
+                        >Terms of Service</button>
+                          {' '}and{' '}
+                            <button
+                                onPointerDown={() => window.open('/privacy.html', '_blank')}
+                                    className="text-indigo-400 underline active:opacity-70"
+                                      >Privacy Policy</button>.
+                                      </p>
       </div>
     </div>
   )
