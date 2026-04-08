@@ -254,6 +254,20 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
     recognition.start()
   }
 
+  async function handleReferFriend() {
+  const message = `Hey! I've been using Onyx Sheets — a mobile spreadsheet that actually works great on phones. Check it out: https://onyx-sheets.vercel.app`
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: 'Onyx Sheets', text: message })
+    } catch (e) {
+      if (e.name !== 'AbortError') console.error(e)
+    }
+  } else {
+    navigator.clipboard?.writeText(message)
+    alert('Link copied to clipboard!')
+  }
+}
+
   const bg = isDark ? 'bg-gray-950' : 'bg-gray-50'
   const headerBg = isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'
   const cardBg = isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'
@@ -305,6 +319,11 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
                 className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm ${btnBg} active:opacity-70`}
               >{syncing ? '⏳' : '☁️'}</button>
             )}
+            <button
+              onPointerDown={handleReferFriend}
+                className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm ${btnBg} active:opacity-70`}
+                  title="Refer a friend"
+                  >🎁</button>
             <button
               onPointerDown={() => setShowFeedback(true)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm ${btnBg} active:opacity-70`}
