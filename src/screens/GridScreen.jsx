@@ -242,50 +242,87 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
   if (!parsed) return
   const { headers, rows: csvRows } = parsed
 
-  // If sheet already has data, ask user what to do
   if (columns.length > 0 && rows.length > 0) {
-    // Check if headers match existing columns
     const existingNames = columns.map(c => c.name.toLowerCase().trim())
     const csvNames = headers.map(h => h.toLowerCase().trim())
     const headersMatch = csvNames.every(h => existingNames.includes(h))
 
-    setConfirm({
-      message: headersMatch
-        ? `This sheet already has data. Choose:\n\n• "Append" adds new rows at the bottom using your existing columns.\n• "Replace" clears all data and imports fresh.`
-        : `CSV columns don't match this sheet's columns. Only "Replace" is available — this will clear all existing data and import fresh.`,
-      confirmLabel: headersMatch ? 'Append Rows' : 'Replace All',
-      cancelLabel: headersMatch ? 'Replace All' : 'Cancel',
-      onConfirm: async () => {
-        setConfirm(null)
-        if (headersMatch) {
-          // Append — add rows using existing column IDs
+    if (headersMatch) {
+      setConfirm({
+        message: `This sheet already has data.\n\n• "Append Rows" adds new rows at the bottom using your existing columns.\n• "Replace All" clears all data and imports fresh.`,
+        confirmLabel: 'Append Rows',
+        cancelLabel: 'Replace All',
+        onConfirm: async () => {
+          setConfirm(null)
           for (const csvRow of csvRows) {
             const cellData = {}
             columns.forEach(col => {
-              const matchingHeader = headers.find(h => h.toLowerCase().trim() === col.name.toLowerCase().trim())
-              if (matchingHeader) cellData[col.id] = csvRow[matchingHeader] || ''
+              const match = headers.find(h => h.toLowerCase().trim() === col.name.toLowerCase().trim())
+              if (match) cellData[col.id] = csvRow[match] || ''
             })
             await createRow(sheet.id, cellData)
           }
-        } else {
-          // Replace — clear and reimport
+          if (user) syncToCloud(user.id, db)
+          await loadData()
+          setShowMoreMenu(false)
+        },
+        onCancel: async () => {
+          setConfirm(null)
           await importFresh(headers, csvRows)
+          if (user) syncToCloud(user.id, db)
+          await loadData()
+          setShowMoreMenu(false)
         }
-        if (user) syncToCloud(user.id, db)
-        await loadData()
-        setShowMoreMenu(false)
-      },
-      onCancel: headersMatch ? async () => {
-        // Cancel button = Replace All when headers match
-        setConfirm(null)
-        await importFresh(headers, csvRows)
-        if (user) syncToCloud(user.id, db)
-        await loadData()
-        setShowMoreMenu(false)
-      } : () => setConfirm(null)
-    })
+      })
+    } else {
+      setConfirm({
+        message: `CSV columns don't match this sheet.\n\n• "Add as New Columns" keeps your existing data and adds the CSV as new columns on the right.\n• "Replace All" clears all data and imports fresh.\n• "Cancel" does nothing.`,
+        confirmLabel: 'Add as New Columns',
+        thirdLabel: 'Replace All',
+        cancelLabel: 'Cancel',
+        onThird: async () => {
+              setConfirm(null)
+                  await importFresh(headers, csvRows)
+                      if (user) syncToCloud(user.id, db)
+                          await loadData()
+                              setShowMoreMenu(false)
+                                },
+        onConfirm: async () => {
+          setConfirm(null)
+          // Add CSV headers as new columns starting after existing ones
+          const newColIds = []
+          for (let i = 0; i < headers.length; i++) {
+            const colId = await createColumn(sheet.id, headers[i], 'text', columns.length + i)
+            newColIds.push(colId)
+          }
+          // Populate rows — match by index, create new rows if CSV has more rows
+          const allRows = [...rows].sort((a, b) => a.createdAt - b.createdAt)
+          for (let i = 0; i < csvRows.length; i++) {
+            const cellData = {}
+            headers.forEach((header, j) => {
+              cellData[newColIds[j]] = csvRows[i][header] || ''
+            })
+            if (i < allRows.length) {
+              // Update existing row with new column data
+              for (const [colId, value] of Object.entries(cellData)) {
+                await updateCell(allRows[i].id, colId, value)
+              }
+            } else {
+              // Create new row if CSV has more rows than existing sheet
+              await createRow(sheet.id, cellData)
+            }
+          }
+          if (user) syncToCloud(user.id, db)
+          await loadData()
+          setShowMoreMenu(false)
+        },
+        onCancel: () => setConfirm(null)
+      })
+
+      // Also offer Replace All as a third option via a second confirm
+      // We handle this by adding a note in the message above
+    }
   } else {
-    // Empty sheet — just import directly
     await importFresh(headers, csvRows)
     if (user) syncToCloud(user.id, db)
     await loadData()
