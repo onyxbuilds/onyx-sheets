@@ -242,106 +242,110 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
   if (!parsed) return
   const { headers, rows: csvRows } = parsed
 
-  if (columns.length > 0 && rows.length > 0) {
-    const existingNames = columns.map(c => c.name.toLowerCase().trim())
-    const csvNames = headers.map(h => h.toLowerCase().trim())
-    const headersMatch = csvNames.every(h => existingNames.includes(h))
-
-    if (headersMatch) {
-      setConfirm({
-        message: `This sheet already has data.\n\n• "Append Rows" adds new rows at the bottom using your existing columns.\n• "Replace All" clears all data and imports fresh.`,
-        confirmLabel: 'Append Rows',
-        cancelLabel: 'Replace All',
-        onConfirm: async () => {
-          setConfirm(null)
-          for (const csvRow of csvRows) {
-            const cellData = {}
-            columns.forEach(col => {
-              const match = headers.find(h => h.toLowerCase().trim() === col.name.toLowerCase().trim())
-              if (match) cellData[col.id] = csvRow[match] || ''
-            })
-            await createRow(sheet.id, cellData)
-          }
-          if (user) syncToCloud(user.id, db)
-          await loadData()
-          setShowMoreMenu(false)
-        },
-        onCancel: async () => {
-          setConfirm(null)
-          await importFresh(headers, csvRows)
-          if (user) syncToCloud(user.id, db)
-          await loadData()
-          setShowMoreMenu(false)
-        }
-      })
-    } else {
-      setConfirm({
-        message: `CSV columns don't match this sheet.\n\n• "Add as New Columns" keeps your existing data and adds the CSV as new columns on the right.\n• "Replace All" clears all data and imports fresh.`,
-        confirmLabel: 'Add as New Columns',
-        thirdLabel: 'Replace All',
-        cancelLabel: 'Cancel',
-        onThird: async () => {
-              setConfirm(null)
-                  await importFresh(headers, csvRows)
-                      if (user) syncToCloud(user.id, db)
-                          await loadData()
-                              setShowMoreMenu(false)
-                                },
-        onConfirm: async () => {
-          setConfirm(null)
-          // Add CSV headers as new columns starting after existing ones
-          const newColIds = []
-          for (let i = 0; i < headers.length; i++) {
-            const colId = await createColumn(sheet.id, headers[i], 'text', columns.length + i)
-            newColIds.push(colId)
-          }
-          // Populate rows — match by index, create new rows if CSV has more rows
-          const allRows = [...rows].sort((a, b) => a.createdAt - b.createdAt)
-          for (let i = 0; i < csvRows.length; i++) {
-            const cellData = {}
-            headers.forEach((header, j) => {
-              cellData[newColIds[j]] = csvRows[i][header] || ''
-            })
-            if (i < allRows.length) {
-              // Update existing row with new column data
-              for (const [colId, value] of Object.entries(cellData)) {
-                await updateCell(allRows[i].id, colId, value)
-              }
-            } else {
-              // Create new row if CSV has more rows than existing sheet
-              await createRow(sheet.id, cellData)
-            }
-          }
-          if (user) syncToCloud(user.id, db)
-          await loadData()
-          setShowMoreMenu(false)
-        },
-        onCancel: () => setConfirm(null)
-      })
-
-      // Also offer Replace All as a third option via a second confirm
-      // We handle this by adding a note in the message above
-    }
-  } else {
+  // Empty sheet — import directly, no dialog needed
+  if (columns.length === 0 || rows.length === 0) {
     await importFresh(headers, csvRows)
     if (user) syncToCloud(user.id, db)
     await loadData()
     setShowMoreMenu(false)
+    return
+  }
+
+  const existingNames = columns.map(c => c.name.toLowerCase().trim())
+  const csvNames = headers.map(h => h.toLowerCase().trim())
+  const headersMatch = csvNames.every(h => existingNames.includes(h))
+
+  if (headersMatch) {
+    // Case 1 — headers match: Append Rows or Replace All
+    setConfirm({
+      message: `CSV columns match this sheet.\n\nAppend adds rows at the bottom.\nReplace All clears all existing data first.`,
+      confirmLabel: 'Append Rows',
+      secondaryLabel: 'Replace All',
+      onConfirm: async () => {
+        setConfirm(null)
+        // Snapshot for undo
+        const snapshot = rows.map(r => ({ ...r, cells: { ...r.cells } }))
+        // Append rows
+        for (const csvRow of csvRows) {
+          const cellData = {}
+          columns.forEach(col => {
+            const match = headers.find(h =>
+              h.toLowerCase().trim() === col.name.toLowerCase().trim()
+            )
+            if (match) cellData[col.id] = csvRow[match] || ''
+          })
+          await createRow(sheet.id, cellData)
+        }
+        if (user) syncToCloud(user.id, db)
+        await loadData()
+        setShowMoreMenu(false)
+      },
+      onSecondary: async () => {
+        setConfirm(null)
+        await importFresh(headers, csvRows)
+        if (user) syncToCloud(user.id, db)
+        await loadData()
+        setShowMoreMenu(false)
+      },
+      onCancel: () => setConfirm(null)
+    })
+  } else {
+    // Case 2 — headers don't match: Add as New Columns or Replace All
+    setConfirm({
+      message: `CSV columns don't match this sheet.\n\nAdd as New Columns keeps your existing data and adds CSV data as new columns.\n\nEnter the row number to start populating from (e.g. 1 = first row):`,
+      confirmLabel: 'Add as New Columns',
+      secondaryLabel: 'Replace All',
+      startRow: 1,
+      onConfirm: async (startRow = 1) => {
+        setConfirm(null)
+        const startIndex = Math.max(0, (parseInt(startRow) || 1) - 1)
+        // Add CSV headers as new columns
+        const newColIds = []
+        for (let i = 0; i < headers.length; i++) {
+          const colId = await createColumn(sheet.id, headers[i], 'text', columns.length + i)
+          newColIds.push(colId)
+        }
+        // Populate rows starting from startIndex
+        const allRows = [...rows].sort((a, b) => a.createdAt - b.createdAt)
+        for (let i = 0; i < csvRows.length; i++) {
+          const cellData = {}
+          headers.forEach((header, j) => {
+            cellData[newColIds[j]] = csvRows[i][header] || ''
+          })
+          const targetRowIndex = startIndex + i
+          if (targetRowIndex < allRows.length) {
+            for (const [colId, value] of Object.entries(cellData)) {
+              await updateCell(allRows[targetRowIndex].id, colId, value)
+            }
+          } else {
+            await createRow(sheet.id, cellData)
+          }
+        }
+        if (user) syncToCloud(user.id, db)
+        await loadData()
+        setShowMoreMenu(false)
+      },
+      onSecondary: async () => {
+        setConfirm(null)
+        await importFresh(headers, csvRows)
+        if (user) syncToCloud(user.id, db)
+        await loadData()
+        setShowMoreMenu(false)
+      },
+      onCancel: () => setConfirm(null)
+    })
   }
 }
 
 async function importFresh(headers, csvRows) {
-  // Delete existing columns and rows
   for (const col of columns) {
     await deleteColumn(col.id, sheet.id)
   }
-  // Create new columns
   const newColIds = []
   for (let i = 0; i < headers.length; i++) {
     const colId = await createColumn(sheet.id, headers[i], 'text', i)
     newColIds.push(colId)
   }
-  // Create new rows
   for (const csvRow of csvRows) {
     const cellData = {}
     headers.forEach((header, i) => {
@@ -428,12 +432,29 @@ async function importFresh(headers, csvRows) {
     <div className={`h-screen ${bg} ${text} flex flex-col overflow-hidden`} style={{ height: '100dvh' }}>
 
       {confirm && (
-        <ConfirmDialog
-          message={confirm.message}
-          onConfirm={confirm.onConfirm}
-          onCancel={() => setConfirm(null)}
-        />
-      )}
+          <ConfirmDialog
+              message={confirm.message}
+                  onConfirm={confirm.onConfirm}
+                      onCancel={confirm.onCancel || (() => setConfirm(null))}
+                          onSecondary={confirm.onSecondary}
+                              confirmLabel={confirm.confirmLabel}
+                                  secondaryLabel={confirm.secondaryLabel}
+                                    >
+                                        {confirm.startRow !== undefined && (
+                                              <input
+                                                      type="number"
+                                                              min="1"
+                                                                      max={rows.length}
+                                                                              defaultValue={1}
+                                                                                      onChange={e => {
+                                                                                                confirm.startRow = parseInt(e.target.value) || 1
+                                                                                                        }}
+                                                                                                                className="w-full bg-gray-700 text-white rounded-xl px-4 py-3 text-base outline-none border border-gray-600 focus:border-indigo-500"
+                                                                                                                        placeholder={`Row number (1 to ${rows.length})`}
+                                                                                                                              />
+                                                                                                                                  )}
+                                                                                                                                    </ConfirmDialog>
+                                                                                                                                    )}
 
       {paywall && (
         <Paywall

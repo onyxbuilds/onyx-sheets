@@ -285,7 +285,7 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
         <ConfirmDialog
           message={confirm.message}
           onConfirm={confirm.onConfirm}
-          onCancel={() => setConfirm(null)}
+          onCancel={confirm.onCancel || (() => setConfirm(null))}
         />
       )}
 
