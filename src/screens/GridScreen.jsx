@@ -276,7 +276,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
       })
     } else {
       setConfirm({
-        message: `CSV columns don't match this sheet.\n\n• "Add as New Columns" keeps your existing data and adds the CSV as new columns on the right.\n• "Replace All" clears all data and imports fresh.\n• "Cancel" does nothing.`,
+        message: `CSV columns don't match this sheet.\n\n• "Add as New Columns" keeps your existing data and adds the CSV as new columns on the right.\n• "Replace All" clears all data and imports fresh.`,
         confirmLabel: 'Add as New Columns',
         thirdLabel: 'Replace All',
         cancelLabel: 'Cancel',
