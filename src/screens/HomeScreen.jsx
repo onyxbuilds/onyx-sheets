@@ -1,5 +1,4 @@
 // — HOME SCREEN
-import { supabase } from '../supabase'
 import { useState, useEffect, useRef } from 'react'
 import { useTheme } from '../theme'
 import BottomSheet from '../components/BottomSheet'
@@ -11,26 +10,26 @@ import {
   createColumn, db
 } from '../db'
 import { syncFromCloud, syncToCloud } from '../sync'
+import { supabase } from '../supabase'
 import { signOut } from '../auth'
 import { hasReachedSheetLimit, getLimitMessage } from '../utils/limits'
 
-// ── Design tokens matching landing page exactly
 const D = {
-  black:      '#080809',
-  surface:    '#0f0f11',
-  surface2:   '#16161a',
-  surface3:   '#1e1e24',
-  border:     '#2a2a35',
-  white:      '#f8f8fc',
-  white60:    'rgba(248,248,252,0.6)',
-  white30:    'rgba(248,248,252,0.3)',
-  white10:    'rgba(248,248,252,0.08)',
-  indigo:     '#6366f1',
-  indigoBright:'#818cf8',
-  indigoDim:  '#3730a3',
-  green:      '#34d399',
-  red:        '#f87171',
-  redDim:     'rgba(248,113,113,0.1)',
+  black:        '#080809',
+  surface:      '#0f0f11',
+  surface2:     '#16161a',
+  surface3:     '#1e1e24',
+  border:       '#2a2a35',
+  white:        '#f8f8fc',
+  white60:      'rgba(248,248,252,0.6)',
+  white30:      'rgba(248,248,252,0.3)',
+  white10:      'rgba(248,248,252,0.08)',
+  indigo:       '#6366f1',
+  indigoBright: '#818cf8',
+  indigoDim:    '#3730a3',
+  green:        '#34d399',
+  red:          '#f87171',
+  redDim:       'rgba(248,113,113,0.1)',
 }
 
 const TEMPLATES = [
@@ -60,6 +59,8 @@ const TEMPLATES = [
 
 export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
   const { isDark, toggleTheme } = useTheme()
+  const dark = isDark
+
   const [sheets, setSheets] = useState([])
   const [binSheets, setBinSheets] = useState([])
   const [showBin, setShowBin] = useState(false)
@@ -198,23 +199,19 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
   }
 
   async function handleManualSync() {
-      if (!user) return
-        setSyncing(true)
-          const localSheets = await getSheets()
-            const { data: cloudSheets } = await supabase
-                .from('sheets')
-                    .select('id')
-                        .eq('user_id', user.id)
-                          
-                            if (localSheets.length > 0 && (!cloudSheets || cloudSheets.length === 0)) {
-                                // Local has data but cloud is empty — push up
-                                    await syncToCloud(user.id, db)
-                                        setSyncing(false)
-                                            return
-                                              }
-                                                await syncToCloud(user.id, db)
-                                                  setSyncing(false)
-                                                  }
+    if (!user) return
+    setSyncing(true)
+    const localSheets = await getSheets()
+    const { data: cloudSheets } = await supabase
+      .from('sheets').select('id').eq('user_id', user.id)
+    if (localSheets.length > 0 && (!cloudSheets || cloudSheets.length === 0)) {
+      await syncToCloud(user.id, db)
+      setSyncing(false)
+      return
+    }
+    await syncToCloud(user.id, db)
+    setSyncing(false)
+  }
 
   async function handleSignOut() {
     await signOut()
@@ -245,18 +242,18 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
       catch (e) { if (e.name !== 'AbortError') console.error(e) }
     } else {
       navigator.clipboard?.writeText(message)
-      alert('Link copied to clipboard!')
+      alert('Link copied!')
     }
   }
 
   function handleVoiceInput() {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      alert('Voice input is not supported on this browser. Try Chrome.')
+      alert('Voice input not supported. Try Chrome.')
       return
     }
     if (isListening) { recognitionRef.current?.stop(); setIsListening(false); return }
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    const recognition = new SpeechRecognition()
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    const recognition = new SR()
     recognitionRef.current = recognition
     recognition.lang = navigator.language || 'en-IN'
     recognition.continuous = true
@@ -266,22 +263,26 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
       const transcript = Array.from(e.results).map(r => r[0].transcript).join(' ')
       setFeedbackText(prev => prev ? prev + ' ' + transcript : transcript)
     }
-    recognition.onerror = (e) => {
-      setIsListening(false)
-      if (e.error === 'not-allowed') alert('Microphone access denied.')
-    }
+    recognition.onerror = () => setIsListening(false)
     recognition.onend = () => setIsListening(false)
     recognition.start()
   }
 
-  // Light theme uses system colors, dark uses landing page tokens
-  const dark = isDark
+  const bg =       dark ? D.black    : '#f4f4f8'
+  const surface =  dark ? D.surface  : '#ffffff'
+  const surface2 = dark ? D.surface2 : '#f4f4f8'
+  const surface3 = dark ? D.surface3 : '#eaeaef'
+  const border =   dark ? D.border   : '#e5e5ea'
+  const textPri =  dark ? D.white    : '#111111'
+  const textSec =  dark ? D.white60  : '#666666'
+  const textDim =  dark ? D.white30  : '#aaaaaa'
 
   return (
     <div style={{
-      minHeight: '100vh',
-      background: dark ? D.black : '#f4f4f8',
-      color: dark ? D.white : '#111',
+      minHeight: '100dvh',
+      paddingBottom: '72px', // space for bottom bar
+      background: bg,
+      color: textPri,
       fontFamily: "'DM Sans', sans-serif"
     }}>
 
@@ -306,112 +307,86 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
         />
       )}
 
-      {/* ── Header */}
+      {/* ── Top Header — minimal */}
       <div style={{
-        background: dark ? D.surface : '#fff',
-        borderBottom: `1px solid ${dark ? D.border : '#e5e5ea'}`,
-        padding: '16px'
+        background: surface,
+        borderBottom: `1px solid ${border}`,
+        padding: '14px 16px'
       }}>
-        {/* Row 1 — Logo + actions */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* Logo */}
           <div>
-            <div style={{ fontSize: '1.1rem', fontWeight: 600, letterSpacing: '-0.02em', color: dark ? D.white : '#111' }}>
+            <div style={{ fontSize: '1.05rem', fontWeight: 600, letterSpacing: '-0.02em', color: textPri }}>
               ◈ Onyx Sheets
             </div>
             {user && (
-              <div style={{ fontSize: '0.7rem', color: dark ? D.white60 : '#888', marginTop: '2px', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: '0.68rem', color: textSec, marginTop: '1px', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {user.email}
               </div>
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             {/* Theme toggle */}
-            <ActionBtn dark={dark} onPointerDown={toggleTheme} title="Toggle theme">
-              {isDark ? '☀' : '☾'}
-            </ActionBtn>
+            <button
+              onPointerDown={toggleTheme}
+              style={{
+                width: '36px', height: '36px',
+                background: surface3,
+                border: `1px solid ${border}`,
+                borderRadius: '8px',
+                color: textSec,
+                fontSize: '1rem',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer'
+              }}
+            >{dark ? '☀' : '☾'}</button>
 
-            {/* Sync */}
-            {user && (
-              <ActionBtn dark={dark} onPointerDown={handleManualSync} title="Sync">
-                <span style={{ fontSize: '0.65rem', fontWeight: 600 }}>{syncing ? '···' : 'SYNC'}</span>
-              </ActionBtn>
-            )}
-
-            {/* Refer */}
-            <ActionBtn dark={dark} onPointerDown={handleReferFriend} title="Refer a friend">
-              <span style={{ fontSize: '0.65rem', fontWeight: 600 }}>SHARE</span>
-            </ActionBtn>
-
-            {/* Feedback */}
-            <ActionBtn dark={dark} onPointerDown={() => setShowFeedback(true)} title="Send feedback">
-              <span style={{ fontSize: '0.65rem', fontWeight: 600 }}>HELP</span>
-            </ActionBtn>
-
-            {/* Sign out */}
-            {user && (
-              <ActionBtn dark={dark} onPointerDown={handleSignOut} title="Sign out" danger>
-                <span style={{ fontSize: '0.65rem', fontWeight: 600 }}>OUT</span>
-              </ActionBtn>
-            )}
+            {/* + New */}
+            <button
+              onPointerDown={() => setShowCreate(true)}
+              style={{
+                background: D.indigo,
+                color: '#fff',
+                border: 'none',
+                borderRadius: '9px',
+                padding: '9px 16px',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                boxShadow: `0 4px 16px rgba(99,102,241,0.35)`,
+                fontFamily: "'DM Sans', sans-serif"
+              }}
+            >+ New</button>
           </div>
         </div>
 
-        {/* Row 2 — Usage bar + New button */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <span style={{ fontSize: '0.7rem', color: dark ? D.white60 : '#888' }}>
-                {sheets.length} / 5 sheets
-              </span>
-              <button
-                onPointerDown={onUpgrade}
-                style={{
-                  background: 'none', border: 'none', padding: 0,
-                  fontSize: '0.7rem', fontWeight: 600,
-                  color: D.indigoBright, cursor: 'pointer'
-                }}
-              >Upgrade to Pro →</button>
-            </div>
-            <div style={{
-              height: '2px', borderRadius: '2px',
-              background: dark ? D.border : '#e5e5ea',
-              overflow: 'hidden'
-            }}>
-              <div style={{
-                height: '100%', borderRadius: '2px',
-                background: `linear-gradient(90deg, ${D.indigo}, ${D.indigoBright})`,
-                width: `${Math.min((sheets.length / 5) * 100, 100)}%`,
-                transition: 'width 0.3s ease'
-              }} />
-            </div>
+        {/* Usage bar */}
+        <div style={{ marginTop: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+            <span style={{ fontSize: '0.68rem', color: textSec }}>{sheets.length} / 5 free sheets</span>
+            <button
+              onPointerDown={onUpgrade}
+              style={{ background: 'none', border: 'none', padding: 0, fontSize: '0.68rem', fontWeight: 600, color: D.indigoBright, cursor: 'pointer' }}
+            >Upgrade to Pro →</button>
           </div>
-
-          <button
-            onPointerDown={() => setShowCreate(true)}
-            style={{
-              background: D.indigo,
-              color: '#fff',
-              border: 'none',
-              borderRadius: '10px',
-              padding: '10px 18px',
-              fontSize: '0.85rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              letterSpacing: '0.01em',
-              flexShrink: 0,
-              boxShadow: `0 4px 16px rgba(99,102,241,0.3)`
-            }}
-          >+ New</button>
+          <div style={{ height: '2px', borderRadius: '2px', background: border, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%', borderRadius: '2px',
+              background: `linear-gradient(90deg, ${D.indigo}, ${D.indigoBright})`,
+              width: `${Math.min((sheets.length / 5) * 100, 100)}%`,
+              transition: 'width 0.3s ease'
+            }} />
+          </div>
         </div>
       </div>
 
       {/* ── Sheet list */}
-      <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {loading && (
           <div style={{ textAlign: 'center', padding: '80px 0' }}>
-            <div style={{ fontSize: '2rem', opacity: 0.4 }}>◎</div>
-            <div style={{ fontSize: '0.8rem', color: dark ? D.white60 : '#888', marginTop: '8px' }}>
+            <div style={{ fontSize: '2rem', opacity: 0.3 }}>◎</div>
+            <div style={{ fontSize: '0.8rem', color: textSec, marginTop: '8px' }}>
               {syncing ? 'Syncing from cloud...' : 'Loading...'}
             </div>
           </div>
@@ -419,37 +394,26 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
 
         {!loading && sheets.length === 0 && binSheets.length === 0 && (
           <div style={{ textAlign: 'center', padding: '80px 0' }}>
-            <div style={{ fontSize: '3rem', marginBottom: '12px', opacity: 0.3 }}>◈</div>
-            <div style={{ fontSize: '0.9rem', color: dark ? D.white60 : '#888' }}>No sheets yet</div>
-            <div style={{ fontSize: '0.75rem', color: dark ? D.white30 : '#aaa', marginTop: '4px' }}>Tap + New to get started</div>
+            <div style={{ fontSize: '3rem', marginBottom: '12px', opacity: 0.2 }}>◈</div>
+            <div style={{ fontSize: '0.9rem', color: textSec }}>No sheets yet</div>
+            <div style={{ fontSize: '0.75rem', color: textDim, marginTop: '4px' }}>Tap + New to get started</div>
           </div>
         )}
 
         {sheets.map(sheet => (
-          <div
-            key={sheet.id}
-            style={{
-              background: dark ? D.surface2 : '#fff',
-              border: `1px solid ${dark ? D.border : '#e5e5ea'}`,
-              borderLeft: `3px solid ${D.indigo}`,
-              borderRadius: '12px',
-              padding: '14px 14px 14px 16px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '12px'
-            }}
-          >
-            <div
-              style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
-              onPointerDown={() => onOpenSheet(sheet)}
-            >
-              <div style={{ fontWeight: 600, fontSize: '0.95rem', color: dark ? D.white : '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div key={sheet.id} style={{
+            background: surface,
+            border: `1px solid ${border}`,
+            borderLeft: `3px solid ${D.indigo}`,
+            borderRadius: '12px',
+            padding: '14px 14px 14px 16px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px'
+          }}>
+            <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onPointerDown={() => onOpenSheet(sheet)}>
+              <div style={{ fontWeight: 600, fontSize: '0.95rem', color: textPri, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {sheet.name}
               </div>
-              <div style={{ fontSize: '0.7rem', color: dark ? D.white60 : '#888', marginTop: '2px' }}>
-                Tap to open
-              </div>
+              <div style={{ fontSize: '0.68rem', color: textSec, marginTop: '2px' }}>Tap to open</div>
             </div>
             <button
               onPointerDown={() => handleDeleteSheet(sheet.id, sheet.name)}
@@ -457,28 +421,30 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
               style={{
                 background: dark ? D.redDim : '#fff0f0',
                 color: D.red,
-                border: `1px solid ${dark ? 'rgba(248,113,113,0.2)' : '#fecaca'}`,
+                border: `1px solid rgba(248,113,113,0.2)`,
                 borderRadius: '8px',
                 padding: '6px 12px',
                 fontSize: '0.72rem',
                 fontWeight: 600,
                 cursor: 'pointer',
-                flexShrink: 0
+                flexShrink: 0,
+                fontFamily: "'DM Sans', sans-serif"
               }}
             >Delete</button>
           </div>
         ))}
 
-        {/* Bin section */}
+        {/* Bin */}
         {!loading && binSheets.length > 0 && (
-          <div style={{ marginTop: '8px' }}>
+          <div style={{ marginTop: '6px' }}>
             <button
               onPointerDown={() => setShowBin(b => !b)}
               style={{
                 background: 'none', border: 'none', padding: '8px 0',
                 display: 'flex', alignItems: 'center', gap: '6px',
-                color: dark ? D.white60 : '#888',
-                fontSize: '0.8rem', fontWeight: 500, cursor: 'pointer', width: '100%'
+                color: textSec, fontSize: '0.8rem', fontWeight: 500,
+                cursor: 'pointer', width: '100%',
+                fontFamily: "'DM Sans', sans-serif"
               }}
             >
               <span>Bin ({binSheets.length})</span>
@@ -487,22 +453,19 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
 
             {showBin && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
-                <div style={{ fontSize: '0.7rem', color: dark ? D.white30 : '#aaa' }}>
-                  Permanently deleted after 30 days
-                </div>
+                <div style={{ fontSize: '0.68rem', color: textDim }}>Permanently deleted after 30 days</div>
                 {binSheets.map(sheet => (
                   <div key={sheet.id} style={{
-                    background: dark ? D.surface : '#fafafa',
-                    border: `1px solid ${dark ? D.border : '#e5e5ea'}`,
-                    borderRadius: '10px',
-                    padding: '12px'
+                    background: surface,
+                    border: `1px solid ${border}`,
+                    borderRadius: '10px', padding: '12px'
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                       <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontWeight: 500, fontSize: '0.85rem', color: dark ? D.white60 : '#555', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontWeight: 500, fontSize: '0.85rem', color: textSec, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {sheet.name}
                         </div>
-                        <div style={{ fontSize: '0.68rem', color: dark ? D.white30 : '#aaa', marginTop: '2px' }}>
+                        <div style={{ fontSize: '0.68rem', color: textDim, marginTop: '2px' }}>
                           {getDaysRemaining(sheet.deletedAt)} days left
                         </div>
                       </div>
@@ -511,28 +474,23 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
                           onPointerDown={() => handleRestoreSheet(sheet.id)}
                           disabled={deleting}
                           style={{
-                            background: dark ? 'rgba(99,102,241,0.12)' : '#eef',
+                            background: 'rgba(99,102,241,0.1)',
                             color: D.indigoBright,
-                            border: `1px solid rgba(99,102,241,0.3)`,
-                            borderRadius: '8px',
-                            padding: '6px 10px',
-                            fontSize: '0.72rem',
-                            fontWeight: 600,
-                            cursor: 'pointer'
+                            border: `1px solid rgba(99,102,241,0.25)`,
+                            borderRadius: '8px', padding: '6px 10px',
+                            fontSize: '0.72rem', fontWeight: 600,
+                            cursor: 'pointer', fontFamily: "'DM Sans', sans-serif"
                           }}
                         >Restore</button>
                         <button
                           onPointerDown={() => handlePermanentDelete(sheet.id, sheet.name)}
                           disabled={deleting}
                           style={{
-                            background: dark ? D.redDim : '#fff0f0',
-                            color: D.red,
+                            background: D.redDim, color: D.red,
                             border: `1px solid rgba(248,113,113,0.2)`,
-                            borderRadius: '8px',
-                            padding: '6px 10px',
-                            fontSize: '0.72rem',
-                            fontWeight: 600,
-                            cursor: 'pointer'
+                            borderRadius: '8px', padding: '6px 10px',
+                            fontSize: '0.72rem', fontWeight: 600,
+                            cursor: 'pointer', fontFamily: "'DM Sans', sans-serif"
                           }}
                         >Delete Forever</button>
                       </div>
@@ -542,6 +500,41 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
               </div>
             )}
           </div>
+        )}
+      </div>
+
+      {/* ── Bottom action bar */}
+      <div style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0,
+        background: surface,
+        borderTop: `1px solid ${border}`,
+        padding: '10px 16px 14px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-around',
+        zIndex: 30,
+        paddingBottom: 'max(14px, env(safe-area-inset-bottom))'
+      }}>
+        {/* Feedback */}
+        <BottomBarBtn label="Feedback" onPointerDown={() => setShowFeedback(true)} dark={dark}>
+          💬
+        </BottomBarBtn>
+
+        {/* Refer */}
+        <BottomBarBtn label="Refer" onPointerDown={handleReferFriend} dark={dark}>
+          🎁
+        </BottomBarBtn>
+
+        {/* Sync */}
+        {user && (
+          <BottomBarBtn label={syncing ? 'Syncing...' : 'Sync'} onPointerDown={handleManualSync} dark={dark}>
+            {syncing ? '···' : '☁'}
+          </BottomBarBtn>
+        )}
+
+        {/* Sign out */}
+        {user && (
+          <BottomBarBtn label="Sign Out" onPointerDown={handleSignOut} dark={dark} danger>
+            ←
+          </BottomBarBtn>
         )}
       </div>
 
@@ -559,16 +552,13 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
               width: '100%', boxSizing: 'border-box',
               background: dark ? D.surface3 : '#f4f4f8',
               border: `1px solid ${dark ? D.border : '#ddd'}`,
-              borderRadius: '10px',
-              padding: '14px 16px',
-              fontSize: '1rem',
-              color: dark ? D.white : '#111',
-              outline: 'none',
-              fontFamily: "'DM Sans', sans-serif"
+              borderRadius: '10px', padding: '14px 16px',
+              fontSize: '1rem', color: dark ? D.white : '#111',
+              outline: 'none', fontFamily: "'DM Sans', sans-serif"
             }}
           />
 
-          <div style={{ fontSize: '0.8rem', fontWeight: 600, color: dark ? D.white60 : '#555', marginBottom: '2px' }}>
+          <div style={{ fontSize: '0.8rem', fontWeight: 600, color: dark ? D.white60 : '#555' }}>
             Choose a template
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
@@ -587,11 +577,9 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
                   style={{
                     background: selected ? 'rgba(99,102,241,0.12)' : dark ? D.surface3 : '#f4f4f8',
                     border: `1px solid ${selected ? 'rgba(99,102,241,0.4)' : dark ? D.border : '#ddd'}`,
-                    borderRadius: '10px',
-                    padding: '12px',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
+                    borderRadius: '10px', padding: '12px',
+                    textAlign: 'left', cursor: 'pointer',
+                    fontFamily: "'DM Sans', sans-serif"
                   }}
                 >
                   <div style={{ fontSize: '1.2rem', marginBottom: '4px' }}>{template.icon}</div>
@@ -625,12 +613,9 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
                         flex: 1,
                         background: dark ? D.surface3 : '#f4f4f8',
                         border: `1px solid ${dark ? D.border : '#ddd'}`,
-                        borderRadius: '8px',
-                        padding: '10px 12px',
-                        fontSize: '0.85rem',
-                        color: dark ? D.white : '#111',
-                        outline: 'none',
-                        fontFamily: "'DM Sans', sans-serif"
+                        borderRadius: '8px', padding: '10px 12px',
+                        fontSize: '0.85rem', color: dark ? D.white : '#111',
+                        outline: 'none', fontFamily: "'DM Sans', sans-serif"
                       }}
                     />
                     <select
@@ -639,12 +624,9 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
                       style={{
                         background: dark ? D.surface3 : '#f4f4f8',
                         border: `1px solid ${dark ? D.border : '#ddd'}`,
-                        borderRadius: '8px',
-                        padding: '10px 8px',
-                        fontSize: '0.8rem',
-                        color: dark ? D.white : '#111',
-                        outline: 'none',
-                        fontFamily: "'DM Sans', sans-serif"
+                        borderRadius: '8px', padding: '10px 8px',
+                        fontSize: '0.8rem', color: dark ? D.white : '#111',
+                        outline: 'none', fontFamily: "'DM Sans', sans-serif"
                       }}
                     >
                       <option value="text">Text</option>
@@ -653,11 +635,7 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
                     </select>
                     <button
                       onPointerDown={() => removeColumn(col.id)}
-                      style={{
-                        background: 'none', border: 'none',
-                        color: D.red, fontSize: '1.2rem',
-                        cursor: 'pointer', padding: '4px 8px'
-                      }}
+                      style={{ background: 'none', border: 'none', color: D.red, fontSize: '1.2rem', cursor: 'pointer', padding: '4px 8px' }}
                     >×</button>
                   </div>
                 ))}
@@ -669,8 +647,7 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
             <div style={{
               background: dark ? D.surface3 : '#f4f4f8',
               border: `1px solid ${dark ? D.border : '#ddd'}`,
-              borderRadius: '10px',
-              padding: '12px'
+              borderRadius: '10px', padding: '12px'
             }}>
               <div style={{ fontSize: '0.72rem', color: dark ? D.white60 : '#888', marginBottom: '8px' }}>Columns in this template:</div>
               {selectedTemplate.columns.map(col => (
@@ -687,20 +664,13 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
             style={{
               width: '100%',
               background: creating ? D.indigoDim : D.indigo,
-              color: '#fff',
-              border: 'none',
-              borderRadius: '12px',
-              padding: '16px',
-              fontSize: '1rem',
-              fontWeight: 600,
+              color: '#fff', border: 'none', borderRadius: '12px',
+              padding: '16px', fontSize: '1rem', fontWeight: 600,
               cursor: creating ? 'not-allowed' : 'pointer',
-              letterSpacing: '0.01em',
               boxShadow: creating ? 'none' : `0 4px 20px rgba(99,102,241,0.35)`,
               fontFamily: "'DM Sans', sans-serif"
             }}
-          >
-            {creating ? 'Creating...' : 'Create Sheet'}
-          </button>
+          >{creating ? 'Creating...' : 'Create Sheet'}</button>
         </BottomSheet>
       )}
 
@@ -711,7 +681,7 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
             <div style={{ textAlign: 'center', padding: '32px 0' }}>
               <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>✓</div>
               <div style={{ fontWeight: 600, color: dark ? D.white : '#111' }}>Thank you!</div>
-              <div style={{ fontSize: '0.8rem', color: dark ? D.white60 : '#888', marginTop: '4px' }}>Your feedback has been received.</div>
+              <div style={{ fontSize: '0.8rem', color: dark ? D.white60 : '#888', marginTop: '4px' }}>Received.</div>
             </div>
           ) : (
             <>
@@ -729,12 +699,9 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
                     width: '100%', boxSizing: 'border-box',
                     background: dark ? D.surface3 : '#f4f4f8',
                     border: `1px solid ${dark ? D.border : '#ddd'}`,
-                    borderRadius: '10px',
-                    padding: '14px 44px 14px 16px',
-                    fontSize: '0.9rem',
-                    color: dark ? D.white : '#111',
-                    outline: 'none',
-                    resize: 'none',
+                    borderRadius: '10px', padding: '14px 44px 14px 16px',
+                    fontSize: '0.9rem', color: dark ? D.white : '#111',
+                    outline: 'none', resize: 'none',
                     fontFamily: "'DM Sans', sans-serif"
                   }}
                 />
@@ -759,15 +726,9 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
               <button
                 onPointerDown={handleFeedbackSubmit}
                 style={{
-                  width: '100%',
-                  background: D.indigo,
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '12px',
-                  padding: '16px',
-                  fontSize: '1rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
+                  width: '100%', background: D.indigo, color: '#fff',
+                  border: 'none', borderRadius: '12px', padding: '16px',
+                  fontSize: '1rem', fontWeight: 600, cursor: 'pointer',
                   boxShadow: `0 4px 20px rgba(99,102,241,0.35)`,
                   fontFamily: "'DM Sans', sans-serif"
                 }}
@@ -778,33 +739,29 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
       )}
     </div>
   )
-// ── Reusable action button component
-function ActionBtn({ dark, children, onPointerDown, title, danger }) {
+}
+
+function BottomBarBtn({ children, label, onPointerDown, dark, danger }) {
+  const D = {
+    white60: 'rgba(248,248,252,0.6)', white30: 'rgba(248,248,252,0.3)',
+    red: '#f87171', indigoBright: '#818cf8'
+  }
   return (
     <button
       onPointerDown={onPointerDown}
-      title={title}
       style={{
-        minWidth: '44px',
-        height: '36px',
-        padding: '0 10px',
-        background: danger
-          ? (dark ? 'rgba(248,113,113,0.08)' : '#fff0f0')
-          : (dark ? D.surface3 : '#f4f4f8'),
-        border: `1px solid ${danger
-          ? 'rgba(248,113,113,0.2)'
-          : dark ? D.border : '#e5e5ea'}`,
-        borderRadius: '8px',
-        color: danger ? D.red : dark ? D.white60 : '#555',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
+        background: 'none', border: 'none',
+        color: danger ? D.red : dark ? D.white60 : '#666',
+        cursor: 'pointer', padding: '4px 12px',
+        fontFamily: "'DM Sans', sans-serif",
+        minWidth: '56px'
       }}
     >
-      {children}
+      <span style={{ fontSize: '1.2rem', lineHeight: 1 }}>{children}</span>
+      <span style={{ fontSize: '0.6rem', fontWeight: 500, color: danger ? D.red : dark ? D.white30 : '#999' }}>
+        {label}
+      </span>
     </button>
   )
-}
 }

@@ -1,69 +1,86 @@
 import { supabase } from './supabase'
 
-// Push local Dexie data to Supabase for a specific user
-export async function syncToCloud(userId, db) {
-  try {
-    const sheets = await db.sheets.toArray()
-
-    for (const sheet of sheets) {
-      // Generate a stable UUID from the integer ID
-      const sheetUUID = intToUUID(sheet.id)
-
-      const { error: sheetError } = await supabase.from('sheets').upsert({
-  id: sheetUUID,
-  user_id: userId,
-  name: sheet.name,
-  created_at: sheet.createdAt,
-  updated_at: sheet.updatedAt,
-  status: sheet.status || 'active',
-  deleted_at: sheet.deletedAt || null
-})
-if (sheetError) console.error('Sheet upsert error:', sheetError)
-if (sheetError) alert('Sheet error: ' + JSON.stringify(sheetError))
-
-      const columns = await db.columns.where('sheetId').equals(sheet.id).toArray()
-      for (const col of columns) {
-        await supabase.from('columns').upsert({
-          id: intToUUID(col.id),
-          sheet_id: sheetUUID,
-          name: col.name,
-          type: col.type,
-          position: col.position
-        })
-      }
-
-      const rows = await db.rows.where('sheetId').equals(sheet.id).toArray()
-      for (const row of rows) {
-        const rowUUID = intToUUID(row.id)
-        await supabase.from('rows').upsert({
-          id: rowUUID,
-          sheet_id: sheetUUID,
-          created_at: row.createdAt
-        })
-
-        const cells = await db.cells.where('rowId').equals(row.id).toArray()
-        for (const cell of cells) {
-          await supabase.from('cells').upsert({
-            id: intToUUID(cell.id),
-            row_id: rowUUID,
-            column_id: intToUUID(cell.columnId),
-            value: cell.value
-          })
-        }
-      }
-    }
-
-    console.log('Sync to cloud complete')
-  } catch (e) {
-    console.error('Sync failed:', e)
-      alert('Sync error: ' + e.message)
-      }
-    }
 // Convert integer ID to stable UUID format
-// This ensures the same integer always maps to the same UUID
 function intToUUID(id) {
   const hex = id.toString(16).padStart(12, '0')
   return `00000000-0000-4000-8000-${hex}`
+}
+
+// Convert UUID back to integer for Dexie
+function uuidToInt(uuid) {
+  if (!uuid) return Date.now()
+  const hex = uuid.split('-').pop()
+  return parseInt(hex, 16) || Date.now()
+}
+
+// Push local Dexie data to Supabase — batched for speed
+export async function syncToCloud(userId, db) {
+  try {
+    const sheets = await db.sheets.toArray()
+    if (!sheets.length) return
+
+    // Batch upsert all sheets at once
+    const sheetRows = sheets.map(sheet => ({
+      id: intToUUID(sheet.id),
+      user_id: userId,
+      name: sheet.name,
+      created_at: sheet.createdAt,
+      updated_at: sheet.updatedAt,
+      status: sheet.status || 'active',
+      deleted_at: sheet.deletedAt || null
+    }))
+
+    const { error: sheetsError } = await supabase.from('sheets').upsert(sheetRows)
+    if (sheetsError) { console.error('Sheets sync error:', sheetsError); return }
+
+    // Batch upsert all columns at once
+    const allColumns = await db.columns.toArray()
+    if (allColumns.length) {
+      const columnRows = allColumns.map(col => ({
+        id: intToUUID(col.id),
+        sheet_id: intToUUID(col.sheetId),
+        name: col.name,
+        type: col.type,
+        position: col.position
+      }))
+      const { error: colsError } = await supabase.from('columns').upsert(columnRows)
+      if (colsError) console.error('Columns sync error:', colsError)
+    }
+
+    // Batch upsert all rows at once
+    const allRows = await db.rows.toArray()
+    if (allRows.length) {
+      const rowRows = allRows.map(row => ({
+        id: intToUUID(row.id),
+        sheet_id: intToUUID(row.sheetId),
+        created_at: row.createdAt
+      }))
+      const { error: rowsError } = await supabase.from('rows').upsert(rowRows)
+      if (rowsError) console.error('Rows sync error:', rowsError)
+    }
+
+    // Batch upsert all cells at once
+    const allCells = await db.cells.toArray()
+    if (allCells.length) {
+      const cellRows = allCells.map(cell => ({
+        id: intToUUID(cell.id),
+        row_id: intToUUID(cell.rowId),
+        column_id: intToUUID(cell.columnId),
+        value: cell.value
+      }))
+      // Split into chunks of 500 to avoid payload limits
+      const chunkSize = 500
+      for (let i = 0; i < cellRows.length; i += chunkSize) {
+        const chunk = cellRows.slice(i, i + chunkSize)
+        const { error: cellsError } = await supabase.from('cells').upsert(chunk)
+        if (cellsError) console.error('Cells sync error:', cellsError)
+      }
+    }
+
+    console.log('Sync complete —', sheets.length, 'sheets,', allRows.length, 'rows,', allCells.length, 'cells')
+  } catch (e) {
+    console.error('Sync failed:', e)
+  }
 }
 
 // Pull data from Supabase into local Dexie
@@ -74,23 +91,18 @@ export async function syncFromCloud(userId, db) {
       .select('*')
       .eq('user_id', userId)
 
-    // SAFETY — if Supabase returns error or empty, never clear local data
-    if (error) {
-      console.error('Sync error:', error)
+    // SAFETY — never clear local data on error or empty response
+    if (error) { console.error('Sync error:', error); return false }
+    if (!sheets?.length) {
+      const localSheets = await db.sheets.toArray()
+      if (localSheets.length > 0) {
+        console.warn('Supabase empty but local data exists — skipping pull')
+        return false
+      }
       return false
     }
-    if (!sheets?.length) {
-        // Safety check — if Supabase is empty but local DB has data, don't wipe
-          const localSheets = await db.sheets.toArray()
-            if (localSheets.length > 0) {
-                // Push local data to cloud instead of wiping it
-                    console.warn('Supabase empty but local data exists — skipping cloud pull')
-                        return false
-                          }
-                            return false
-                            }
 
-    // Only clear local data AFTER confirming Supabase has data
+    // Only clear after confirming Supabase has data
     await db.sheets.clear()
     await db.columns.clear()
     await db.rows.clear()
@@ -107,9 +119,7 @@ export async function syncFromCloud(userId, db) {
       })
 
       const { data: columns } = await supabase
-        .from('columns')
-        .select('*')
-        .eq('sheet_id', sheet.id)
+        .from('columns').select('*').eq('sheet_id', sheet.id)
 
       for (const col of columns || []) {
         await db.columns.add({
@@ -122,9 +132,7 @@ export async function syncFromCloud(userId, db) {
       }
 
       const { data: rows } = await supabase
-        .from('rows')
-        .select('*')
-        .eq('sheet_id', sheet.id)
+        .from('rows').select('*').eq('sheet_id', sheet.id)
 
       for (const row of rows || []) {
         await db.rows.add({
@@ -134,9 +142,7 @@ export async function syncFromCloud(userId, db) {
         })
 
         const { data: cells } = await supabase
-          .from('cells')
-          .select('*')
-          .eq('row_id', row.id)
+          .from('cells').select('*').eq('row_id', row.id)
 
         for (const cell of cells || []) {
           await db.cells.add({
@@ -154,10 +160,4 @@ export async function syncFromCloud(userId, db) {
     console.error('syncFromCloud failed:', e)
     return false
   }
-}
-
-function uuidToInt(uuid) {
-  if (!uuid) return Date.now()
-  const hex = uuid.split('-').pop()
-  return parseInt(hex, 16) || Date.now()
 }
