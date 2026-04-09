@@ -6,22 +6,24 @@ export async function syncToCloud(userId, db) {
     const sheets = await db.sheets.toArray()
 
     for (const sheet of sheets) {
-      // Upsert sheet
+      // Generate a stable UUID from the integer ID
+      const sheetUUID = intToUUID(sheet.id)
+
       await supabase.from('sheets').upsert({
-          id: sheet.id.toString(),
-            user_id: userId,
-              name: sheet.name,
-                created_at: sheet.createdAt,
-                  updated_at: sheet.updatedAt,
-                    status: sheet.status || 'active',
-                      deleted_at: sheet.deletedAt || null
-                      })
+        id: sheetUUID,
+        user_id: userId,
+        name: sheet.name,
+        created_at: sheet.createdAt,
+        updated_at: sheet.updatedAt,
+        status: sheet.status || 'active',
+        deleted_at: sheet.deletedAt || null
+      })
 
       const columns = await db.columns.where('sheetId').equals(sheet.id).toArray()
       for (const col of columns) {
         await supabase.from('columns').upsert({
-          id: col.id.toString(),
-          sheet_id: sheet.id.toString(),
+          id: intToUUID(col.id),
+          sheet_id: sheetUUID,
           name: col.name,
           type: col.type,
           position: col.position
@@ -30,27 +32,36 @@ export async function syncToCloud(userId, db) {
 
       const rows = await db.rows.where('sheetId').equals(sheet.id).toArray()
       for (const row of rows) {
+        const rowUUID = intToUUID(row.id)
         await supabase.from('rows').upsert({
-          id: row.id.toString(),
-          sheet_id: sheet.id.toString(),
+          id: rowUUID,
+          sheet_id: sheetUUID,
           created_at: row.createdAt
         })
 
         const cells = await db.cells.where('rowId').equals(row.id).toArray()
         for (const cell of cells) {
           await supabase.from('cells').upsert({
-            id: cell.id.toString(),
-            row_id: row.id.toString(),
-            column_id: cell.columnId.toString(),
+            id: intToUUID(cell.id),
+            row_id: rowUUID,
+            column_id: intToUUID(cell.columnId),
             value: cell.value
           })
         }
       }
     }
+
     console.log('Sync to cloud complete')
   } catch (e) {
     console.error('Sync failed:', e)
   }
+}
+
+// Convert integer ID to stable UUID format
+// This ensures the same integer always maps to the same UUID
+function intToUUID(id) {
+  const hex = id.toString(16).padStart(12, '0')
+  return `00000000-0000-4000-8000-${hex}`
 }
 
 // Pull data from Supabase into local Dexie
@@ -85,7 +96,7 @@ export async function syncFromCloud(userId, db) {
 
     for (const sheet of sheets) {
       await db.sheets.add({
-        id: parseInt(sheet.id) || sheet.id,
+        id: uuidToInt(sheet.id),
         name: sheet.name,
         createdAt: sheet.created_at,
         updatedAt: sheet.updated_at,
@@ -100,8 +111,8 @@ export async function syncFromCloud(userId, db) {
 
       for (const col of columns || []) {
         await db.columns.add({
-          id: parseInt(col.id) || col.id,
-          sheetId: parseInt(col.sheet_id) || col.sheet_id,
+          id: uuidToInt(col.id),
+          sheetId: uuidToInt(col.sheet_id),
           name: col.name,
           type: col.type,
           position: col.position
@@ -115,8 +126,8 @@ export async function syncFromCloud(userId, db) {
 
       for (const row of rows || []) {
         await db.rows.add({
-          id: parseInt(row.id) || row.id,
-          sheetId: parseInt(row.sheet_id) || row.sheet_id,
+          id: uuidToInt(row.id),
+          sheetId: uuidToInt(row.sheet_id),
           createdAt: row.created_at
         })
 
@@ -127,9 +138,9 @@ export async function syncFromCloud(userId, db) {
 
         for (const cell of cells || []) {
           await db.cells.add({
-            id: parseInt(cell.id) || cell.id,
-            rowId: parseInt(cell.row_id) || cell.row_id,
-            columnId: parseInt(cell.column_id) || cell.column_id,
+            id: uuidToInt(cell.id),
+            rowId: uuidToInt(cell.row_id),
+            columnId: uuidToInt(cell.column_id),
             value: cell.value
           })
         }
@@ -138,8 +149,13 @@ export async function syncFromCloud(userId, db) {
 
     return true
   } catch (e) {
-    // SAFETY — any unexpected error must never wipe local data
     console.error('syncFromCloud failed:', e)
     return false
-   }
+  }
+}
+
+function uuidToInt(uuid) {
+  if (!uuid) return Date.now()
+  const hex = uuid.split('-').pop()
+  return parseInt(hex, 16) || Date.now()
 }
