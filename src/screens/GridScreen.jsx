@@ -14,11 +14,32 @@ import {
 import { exportToCSV, exportToPDF, parseCSV } from '../utils/export'
 import { syncToCloud } from '../sync'
 import { getLimitMessage } from '../utils/limits'
+import { supabase } from '../supabase'
+
+// ── Onyx design tokens — exact match to landing page
+const D = {
+  black:        '#080809',
+  surface:      '#0f0f11',
+  surface2:     '#16161a',
+  surface3:     '#1e1e24',
+  border:       '#2a2a35',
+  white:        '#f8f8fc',
+  white60:      'rgba(248,248,252,0.6)',
+  white30:      'rgba(248,248,252,0.3)',
+  white10:      'rgba(248,248,252,0.08)',
+  indigo:       '#6366f1',
+  indigoBright: '#818cf8',
+  indigoDim:    '#3730a3',
+  green:        '#34d399',
+  red:          '#f87171',
+  redDim:       'rgba(248,113,113,0.1)',
+}
 
 const MAX_HISTORY = 50
 
 export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
   const { isDark } = useTheme()
+  const dark = isDark
 
   const [columns, setColumns] = useState([])
   const [rows, setRows] = useState([])
@@ -43,8 +64,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
   const [newColumn, setNewColumn] = useState({ name: '', type: 'text' })
   const [editColData, setEditColData] = useState(null)
 
-  // Undo/Redo history
-  const [history, setHistory] = useState([]) // [{rowId, colId, oldValue, newValue}]
+  const [history, setHistory] = useState([])
   const [historyIndex, setHistoryIndex] = useState(-1)
   const isUndoRedoing = useRef(false)
 
@@ -69,33 +89,24 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
   }
 
   const handleCellSave = useCallback(async (rowId, colId, value) => {
-    // Get old value for undo history
     const oldValue = rows.find(r => r.id === rowId)?.cells?.[colId] || ''
-
     setRows(prev => prev.map(row => {
       if (row.id !== rowId) return row
       return { ...row, cells: { ...row.cells, [colId]: value } }
     }))
-
     try {
       await updateCell(rowId, colId, value)
       if (user) syncToCloud(user.id, db)
-
-      // Push to history only if value actually changed and not from undo/redo
       if (!isUndoRedoing.current && value !== oldValue) {
         setHistory(prev => {
-          // Truncate any redo history ahead of current index
           const newHistory = prev.slice(0, historyIndex + 1)
           newHistory.push({ rowId, colId, oldValue, newValue: value })
-          // Cap at MAX_HISTORY
           if (newHistory.length > MAX_HISTORY) newHistory.shift()
           return newHistory
         })
         setHistoryIndex(prev => Math.min(prev + 1, MAX_HISTORY - 1))
       }
-    } catch (e) {
-      loadData()
-    }
+    } catch (e) { loadData() }
   }, [user, rows, historyIndex])
 
   async function handleUndo() {
@@ -128,11 +139,7 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
 
   async function handleAddRow(formData) {
     const ok = await canAddRow(sheet.id)
-    if (!ok) {
-      setShowAddRow(false)
-      setPaywall('rows')
-      return
-    }
+    if (!ok) { setShowAddRow(false); setPaywall('rows'); return }
     await createRow(sheet.id, formData)
     if (user) syncToCloud(user.id, db)
     await loadData()
@@ -141,12 +148,14 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
   async function handleDeleteRow(rowId) {
     setConfirm({
       message: 'Delete this row?',
+      confirmLabel: 'Delete',
       onConfirm: async () => {
         setRows(prev => prev.filter(r => r.id !== rowId))
         setConfirm(null)
         await deleteRow(rowId, sheet.id)
         if (user) syncToCloud(user.id, db)
-      }
+      },
+      onCancel: () => setConfirm(null)
     })
   }
 
@@ -186,14 +195,16 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
   async function handleDeleteColumn(colId) {
     if (columns.length === 1) return
     setConfirm({
-      message: `Delete column "${editColData?.name}"? All data will be lost.`,
+      message: `Delete column "${editColData?.name}"? All data in this column will be lost.`,
+      confirmLabel: 'Delete Column',
       onConfirm: async () => {
         await deleteColumn(colId, sheet.id)
         await loadData()
         setEditingColumn(null)
         setEditColData(null)
         setConfirm(null)
-      }
+      },
+      onCancel: () => setConfirm(null)
     })
   }
 
@@ -235,125 +246,111 @@ export default function GridScreen({ sheet, onBack, onUpgrade, user, isPro }) {
   }
 
   async function handleCSVImport(e) {
-  const file = e.target.files[0]
-  if (!file) return
-  const text = await file.text()
-  const parsed = parseCSV(text)
-  if (!parsed) return
-  const { headers, rows: csvRows } = parsed
+    const file = e.target.files[0]
+    if (!file) return
+    const text = await file.text()
+    const parsed = parseCSV(text)
+    if (!parsed) return
+    const { headers, rows: csvRows } = parsed
 
-  // Empty sheet — import directly, no dialog needed
-  if (columns.length === 0 || rows.length === 0) {
-    await importFresh(headers, csvRows)
-    if (user) syncToCloud(user.id, db)
-    await loadData()
-    setShowMoreMenu(false)
-    return
-  }
+    if (columns.length === 0 || rows.length === 0) {
+      await importFresh(headers, csvRows)
+      if (user) syncToCloud(user.id, db)
+      await loadData()
+      setShowMoreMenu(false)
+      return
+    }
 
-  const existingNames = columns.map(c => c.name.toLowerCase().trim())
-  const csvNames = headers.map(h => h.toLowerCase().trim())
-  const headersMatch = csvNames.every(h => existingNames.includes(h))
+    const existingNames = columns.map(c => c.name.toLowerCase().trim())
+    const csvNames = headers.map(h => h.toLowerCase().trim())
+    const headersMatch = csvNames.every(h => existingNames.includes(h))
 
-  if (headersMatch) {
-    // Case 1 — headers match: Append Rows or Replace All
-    setConfirm({
-      message: `CSV columns match this sheet.\n\nAppend adds rows at the bottom.\nReplace All clears all existing data first.`,
-      confirmLabel: 'Append Rows',
-      secondaryLabel: 'Replace All',
-      onConfirm: async () => {
-        setConfirm(null)
-        // Snapshot for undo
-        const snapshot = rows.map(r => ({ ...r, cells: { ...r.cells } }))
-        // Append rows
-        for (const csvRow of csvRows) {
-          const cellData = {}
-          columns.forEach(col => {
-            const match = headers.find(h =>
-              h.toLowerCase().trim() === col.name.toLowerCase().trim()
-            )
-            if (match) cellData[col.id] = csvRow[match] || ''
-          })
-          await createRow(sheet.id, cellData)
-        }
-        if (user) syncToCloud(user.id, db)
-        await loadData()
-        setShowMoreMenu(false)
-      },
-      onSecondary: async () => {
-        setConfirm(null)
-        await importFresh(headers, csvRows)
-        if (user) syncToCloud(user.id, db)
-        await loadData()
-        setShowMoreMenu(false)
-      },
-      onCancel: () => setConfirm(null)
-    })
-  } else {
-    // Case 2 — headers don't match: Add as New Columns or Replace All
-    setConfirm({
-      message: `CSV columns don't match this sheet.\n\nAdd as New Columns keeps your existing data and adds CSV data as new columns.\n\nEnter the row number to start populating from (e.g. 1 = first row):`,
-      confirmLabel: 'Add as New Columns',
-      secondaryLabel: 'Replace All',
-      startRow: 1,
-      onConfirm: async (startRow = 1) => {
-        setConfirm(null)
-        const startIndex = Math.max(0, (parseInt(startRow) || 1) - 1)
-        // Add CSV headers as new columns
-        const newColIds = []
-        for (let i = 0; i < headers.length; i++) {
-          const colId = await createColumn(sheet.id, headers[i], 'text', columns.length + i)
-          newColIds.push(colId)
-        }
-        // Populate rows starting from startIndex
-        const allRows = [...rows].sort((a, b) => a.createdAt - b.createdAt)
-        for (let i = 0; i < csvRows.length; i++) {
-          const cellData = {}
-          headers.forEach((header, j) => {
-            cellData[newColIds[j]] = csvRows[i][header] || ''
-          })
-          const targetRowIndex = startIndex + i
-          if (targetRowIndex < allRows.length) {
-            for (const [colId, value] of Object.entries(cellData)) {
-              await updateCell(allRows[targetRowIndex].id, colId, value)
-            }
-          } else {
+    if (headersMatch) {
+      setConfirm({
+        message: `CSV columns match this sheet.\n\nAppend adds rows at the bottom.\nReplace All clears all existing data first.`,
+        confirmLabel: 'Append Rows',
+        secondaryLabel: 'Replace All',
+        onConfirm: async () => {
+          setConfirm(null)
+          for (const csvRow of csvRows) {
+            const cellData = {}
+            columns.forEach(col => {
+              const match = headers.find(h => h.toLowerCase().trim() === col.name.toLowerCase().trim())
+              if (match) cellData[col.id] = csvRow[match] || ''
+            })
             await createRow(sheet.id, cellData)
           }
-        }
-        if (user) syncToCloud(user.id, db)
-        await loadData()
-        setShowMoreMenu(false)
-      },
-      onSecondary: async () => {
-        setConfirm(null)
-        await importFresh(headers, csvRows)
-        if (user) syncToCloud(user.id, db)
-        await loadData()
-        setShowMoreMenu(false)
-      },
-      onCancel: () => setConfirm(null)
-    })
+          if (user) syncToCloud(user.id, db)
+          await loadData()
+          setShowMoreMenu(false)
+        },
+        onSecondary: async () => {
+          setConfirm(null)
+          await importFresh(headers, csvRows)
+          if (user) syncToCloud(user.id, db)
+          await loadData()
+          setShowMoreMenu(false)
+        },
+        onCancel: () => setConfirm(null)
+      })
+    } else {
+      setConfirm({
+        message: `CSV columns don't match this sheet.\n\n• "Add as New Columns" keeps your existing data and adds CSV data as new columns.\n• "Replace All" clears all data and imports fresh.\n\nEnter the row number to start populating from:`,
+        confirmLabel: 'Add as New Columns',
+        secondaryLabel: 'Replace All',
+        startRow: 1,
+        onConfirm: async (startRow = 1) => {
+          setConfirm(null)
+          const startIndex = Math.max(0, (parseInt(startRow) || 1) - 1)
+          const newColIds = []
+          for (let i = 0; i < headers.length; i++) {
+            const colId = await createColumn(sheet.id, headers[i], 'text', columns.length + i)
+            newColIds.push(colId)
+          }
+          const allRows = [...rows].sort((a, b) => a.createdAt - b.createdAt)
+          for (let i = 0; i < csvRows.length; i++) {
+            const cellData = {}
+            headers.forEach((header, j) => {
+              cellData[newColIds[j]] = csvRows[i][header] || ''
+            })
+            const targetRowIndex = startIndex + i
+            if (targetRowIndex < allRows.length) {
+              for (const [colId, value] of Object.entries(cellData)) {
+                await updateCell(allRows[targetRowIndex].id, colId, value)
+              }
+            } else {
+              await createRow(sheet.id, cellData)
+            }
+          }
+          if (user) syncToCloud(user.id, db)
+          await loadData()
+          setShowMoreMenu(false)
+        },
+        onSecondary: async () => {
+          setConfirm(null)
+          await importFresh(headers, csvRows)
+          if (user) syncToCloud(user.id, db)
+          await loadData()
+          setShowMoreMenu(false)
+        },
+        onCancel: () => setConfirm(null)
+      })
+    }
   }
-}
 
-async function importFresh(headers, csvRows) {
-  for (const col of columns) {
-    await deleteColumn(col.id, sheet.id)
+  async function importFresh(headers, csvRows) {
+    for (const col of columns) await deleteColumn(col.id, sheet.id)
+    const newColIds = []
+    for (let i = 0; i < headers.length; i++) {
+      const colId = await createColumn(sheet.id, headers[i], 'text', i)
+      newColIds.push(colId)
+    }
+    for (const csvRow of csvRows) {
+      const cellData = {}
+      headers.forEach((header, i) => { cellData[newColIds[i]] = csvRow[header] || '' })
+      await createRow(sheet.id, cellData)
+    }
   }
-  const newColIds = []
-  for (let i = 0; i < headers.length; i++) {
-    const colId = await createColumn(sheet.id, headers[i], 'text', i)
-    newColIds.push(colId)
-  }
-  for (const csvRow of csvRows) {
-    const cellData = {}
-    headers.forEach((header, i) => {
-      cellData[newColIds[i]] = csvRow[header] || ''
-    })
-    await createRow(sheet.id, cellData)
-  }
-}
 
   async function handleShare() {
     const csvContent = columns.map(c => c.name).join(',') + '\n' +
@@ -366,17 +363,11 @@ async function importFresh(headers, csvRows) {
     const blob = new Blob([csvContent], { type: 'text/csv' })
     const file = new File([blob], `${sheet.name}.csv`, { type: 'text/csv' })
     if (navigator.share && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ title: sheet.name, text: `Sharing: ${sheet.name}`, files: [file] })
-      } catch (e) {
-        if (e.name !== 'AbortError') exportToCSV(sheet, columns, rows)
-      }
+      try { await navigator.share({ title: sheet.name, files: [file] }) }
+      catch (e) { if (e.name !== 'AbortError') exportToCSV(sheet, columns, rows) }
     } else if (navigator.share) {
-      try {
-        await navigator.share({ title: sheet.name, text: `${sheet.name} — ${rows.length} rows` })
-      } catch (e) {
-        if (e.name !== 'AbortError') exportToCSV(sheet, columns, rows)
-      }
+      try { await navigator.share({ title: sheet.name, text: `${sheet.name} — ${rows.length} rows` }) }
+      catch (e) { if (e.name !== 'AbortError') exportToCSV(sheet, columns, rows) }
     } else {
       exportToCSV(sheet, columns, rows)
     }
@@ -387,9 +378,7 @@ async function importFresh(headers, csvRows) {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       result = result.filter(row =>
-        columns.some(col =>
-          String(row.cells?.[col.id] || '').toLowerCase().includes(q)
-        )
+        columns.some(col => String(row.cells?.[col.id] || '').toLowerCase().includes(q))
       )
     }
     if (sortConfig) {
@@ -409,52 +398,59 @@ async function importFresh(headers, csvRows) {
   const canUndo = historyIndex >= 0
   const canRedo = historyIndex < history.length - 1
 
-  const bg = isDark ? 'bg-gray-950' : 'bg-gray-50'
-  const headerBg = isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'
-  const gridHeaderBg = isDark ? 'bg-gray-900' : 'bg-gray-100'
-  const cellBorder = isDark ? 'border-gray-900' : 'border-gray-200'
-  const text = isDark ? 'text-white' : 'text-gray-900'
-  const subtext = isDark ? 'text-gray-400' : 'text-gray-500'
-  const inputBg = isDark
-    ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500'
-    : 'bg-gray-100 border-gray-300 text-gray-900 placeholder-gray-400'
-  const btnBg = isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'
+  // Theme-aware values
+  const bg =        dark ? D.black    : '#f4f4f8'
+  const surface =   dark ? D.surface  : '#ffffff'
+  const surface2 =  dark ? D.surface2 : '#f4f4f8'
+  const surface3 =  dark ? D.surface3 : '#eaeaef'
+  const border =    dark ? D.border   : '#e5e5ea'
+  const textPri =   dark ? D.white    : '#111111'
+  const textSec =   dark ? D.white60  : '#666666'
+  const textDim =   dark ? D.white30  : '#aaaaaa'
 
   if (loading) {
     return (
-      <div className={`h-screen ${bg} flex items-center justify-center`}>
-        <div className="text-3xl animate-pulse">◎</div>
+      <div style={{ height: '100dvh', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ fontSize: '2rem', opacity: 0.3 }}>◎</div>
       </div>
     )
   }
 
   return (
-    <div className={`h-screen ${bg} ${text} flex flex-col overflow-hidden`} style={{ height: '100dvh' }}>
+    <div style={{ height: '100dvh', background: bg, color: textPri, display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: "'DM Sans', sans-serif" }}>
 
       {confirm && (
-          <ConfirmDialog
-              message={confirm.message}
-                  onConfirm={confirm.onConfirm}
-                      onCancel={confirm.onCancel || (() => setConfirm(null))}
-                          onSecondary={confirm.onSecondary}
-                              confirmLabel={confirm.confirmLabel}
-                                  secondaryLabel={confirm.secondaryLabel}
-                                    >
-                                        {confirm.startRow !== undefined && (
-                                              <input
-                                                      type="number"
-                                                              min="1"
-                                                                      max={rows.length}
-                                                                              defaultValue={1}
-                                                                                      onChange={e => {
-                                                                                                confirm.startRow = parseInt(e.target.value) || 1
-                                                                                                        }}
-                                                                                                                className="w-full bg-gray-700 text-white rounded-xl px-4 py-3 text-base outline-none border border-gray-600 focus:border-indigo-500"
-                                                                                                                        placeholder={`Row number (1 to ${rows.length})`}
-                                                                                                                              />
-                                                                                                                                  )}
-                                                                                                                                    </ConfirmDialog>
-                                                                                                                                    )}
+        <ConfirmDialog
+          message={confirm.message}
+          onConfirm={confirm.onConfirm}
+          onCancel={confirm.onCancel}
+          onSecondary={confirm.onSecondary}
+          confirmLabel={confirm.confirmLabel}
+          secondaryLabel={confirm.secondaryLabel}
+        >
+          {confirm.startRow !== undefined && (
+            <input
+              type="number"
+              min="1"
+              max={rows.length}
+              defaultValue={1}
+              onChange={e => { confirm.startRow = parseInt(e.target.value) || 1 }}
+              style={{
+                width: '100%', boxSizing: 'border-box',
+                background: dark ? D.surface3 : '#f4f4f8',
+                border: `1px solid ${border}`,
+                borderRadius: '8px',
+                padding: '12px',
+                fontSize: '1rem',
+                color: textPri,
+                outline: 'none',
+                fontFamily: "'DM Sans', sans-serif"
+              }}
+              placeholder={`Row number (1 to ${rows.length})`}
+            />
+          )}
+        </ConfirmDialog>
+      )}
 
       {paywall && (
         <Paywall
@@ -466,17 +462,32 @@ async function importFresh(headers, csvRows) {
         />
       )}
 
-      {/* Header */}
-      <div className={`${headerBg} border-b px-4 py-3 shrink-0`}>
-        <div className="flex items-center justify-between">
+      {/* ── Header */}
+      <div style={{
+        background: surface,
+        borderBottom: `1px solid ${border}`,
+        padding: '12px 14px',
+        flexShrink: 0
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
 
-          {/* Left — back + sheet name */}
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <button
-              onPointerDown={onBack}
-              className={`${isDark ? 'bg-gray-800 text-white' : 'bg-gray-200 text-gray-900'} text-xl font-bold w-10 h-10 flex items-center justify-center rounded-xl shrink-0 active:opacity-70`}
-            >←</button>
+          {/* Back button */}
+          <button
+            onPointerDown={onBack}
+            style={{
+              width: '40px', height: '40px', flexShrink: 0,
+              background: surface3,
+              border: `1px solid ${border}`,
+              borderRadius: '8px',
+              color: textPri,
+              fontSize: '1.1rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', fontWeight: 700
+            }}
+          >←</button>
 
+          {/* Sheet name */}
+          <div style={{ flex: 1, minWidth: 0 }}>
             {editingName ? (
               <input
                 autoFocus
@@ -485,88 +496,111 @@ async function importFresh(headers, csvRows) {
                 onChange={e => setSheetName(e.target.value)}
                 onBlur={saveSheetName}
                 onKeyDown={e => e.key === 'Enter' && saveSheetName()}
-                className={`${inputBg} rounded-lg px-3 py-2 text-base outline-none border border-indigo-500 flex-1 min-w-0`}
+                style={{
+                  width: '100%', boxSizing: 'border-box',
+                  background: surface3,
+                  border: `1px solid ${D.indigo}`,
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  fontSize: '0.95rem',
+                  color: textPri,
+                  outline: 'none',
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontWeight: 600
+                }}
               />
             ) : (
               <button
                 onPointerDown={() => setEditingName(true)}
-                className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                style={{
+                  background: 'none', border: 'none', padding: 0,
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  cursor: 'pointer', width: '100%', textAlign: 'left'
+                }}
               >
-                <span className="font-bold text-base truncate">{sheetName}</span>
-                <span className="text-indigo-400 text-xs border border-indigo-800 bg-indigo-950 px-2 py-0.5 rounded-lg shrink-0">✏️</span>
+                <span style={{ fontWeight: 600, fontSize: '0.95rem', color: textPri, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {sheetName}
+                </span>
+                <span style={{ fontSize: '0.65rem', color: D.indigoBright, border: `1px solid rgba(129,140,248,0.3)`, background: 'rgba(99,102,241,0.08)', borderRadius: '4px', padding: '2px 6px', flexShrink: 0 }}>
+                  edit
+                </span>
               </button>
             )}
           </div>
 
-          {/* Right — action buttons */}
-          <div className="flex items-center gap-1 ml-2">
+          {/* Action buttons */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
 
             {/* Undo */}
-            <button
-              onPointerDown={handleUndo}
-              disabled={!canUndo}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center text-base active:opacity-70 ${
-                canUndo ? btnBg : isDark ? 'bg-gray-900 text-gray-700' : 'bg-gray-50 text-gray-300'
-              }`}
-              title="Undo"
-            >↩</button>
+            <HdrBtn dark={dark} disabled={!canUndo} onPointerDown={handleUndo} title="Undo">↩</HdrBtn>
 
             {/* Redo */}
-            <button
-              onPointerDown={handleRedo}
-              disabled={!canRedo}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center text-base active:opacity-70 ${
-                canRedo ? btnBg : isDark ? 'bg-gray-900 text-gray-700' : 'bg-gray-50 text-gray-300'
-              }`}
-              title="Redo"
-            >↪</button>
+            <HdrBtn dark={dark} disabled={!canRedo} onPointerDown={handleRedo} title="Redo">↪</HdrBtn>
 
             {/* Search */}
-            <button
-              onPointerDown={() => { setShowSearch(s => !s); setShowMoreMenu(false) }}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center text-base active:opacity-70 ${btnBg}`}
-            >🔍</button>
+            <HdrBtn dark={dark} active={showSearch} onPointerDown={() => { setShowSearch(s => !s); setShowMoreMenu(false) }} title="Search">⌕</HdrBtn>
 
             {/* Share */}
-            <button
-              onPointerDown={handleShare}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center text-base active:opacity-70 ${btnBg}`}
-            >↗️</button>
+            <HdrBtn dark={dark} onPointerDown={handleShare} title="Share">↗</HdrBtn>
 
-            {/* More ⋮ */}
-            <div className="relative">
-              <button
-                onPointerDown={() => { setShowMoreMenu(m => !m); setShowSearch(false) }}
-                className={`w-9 h-9 rounded-xl flex items-center justify-center text-base active:opacity-70 ${showMoreMenu ? 'bg-indigo-600 text-white' : btnBg}`}
-              >⋮</button>
+            {/* More */}
+            <div style={{ position: 'relative' }}>
+              <HdrBtn dark={dark} active={showMoreMenu} onPointerDown={() => { setShowMoreMenu(m => !m); setShowSearch(false) }} title="More">⋯</HdrBtn>
 
               {showMoreMenu && (
                 <div
-                  className={`absolute right-0 top-11 z-50 rounded-2xl overflow-hidden shadow-2xl border ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}
-                  style={{ minWidth: '180px' }}
+                  style={{
+                    position: 'absolute', right: 0, top: '44px',
+                    background: dark ? D.surface2 : '#fff',
+                    border: `1px solid ${border}`,
+                    borderRadius: '12px',
+                    overflow: 'hidden',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+                    minWidth: '180px',
+                    zIndex: 50
+                  }}
                   onPointerDown={e => e.stopPropagation()}
                 >
                   {[
-                    { label: '📄 Export CSV', action: () => { exportToCSV(sheet, columns, rows); setShowMoreMenu(false) } },
-                    { label: '📕 Export PDF', action: () => { exportToPDF(sheet, columns, rows); setShowMoreMenu(false) } },
-                    { label: '📗 Export Excel', action: () => { setPaywall('excelExport'); setShowMoreMenu(false) }, pro: true },
+                    { label: 'Export CSV', icon: '⬇', action: () => { exportToCSV(sheet, columns, rows); setShowMoreMenu(false) } },
+                    { label: 'Export PDF', icon: '⬇', action: () => { exportToPDF(sheet, columns, rows); setShowMoreMenu(false) } },
+                    { label: 'Export Excel', icon: '⬇', action: () => { setPaywall('excelExport'); setShowMoreMenu(false) }, pro: true },
                   ].map((item, i) => (
                     <button
                       key={i}
                       onPointerDown={item.action}
-                      className={`w-full text-left px-4 py-3 text-sm active:opacity-70 flex items-center justify-between ${
-                        i < 2 ? isDark ? 'border-b border-gray-800' : 'border-b border-gray-100' : ''
-                      } ${isDark ? 'text-gray-300' : 'text-gray-700'}`}
+                      style={{
+                        width: '100%', textAlign: 'left',
+                        padding: '13px 16px',
+                        background: 'none',
+                        border: 'none',
+                        borderBottom: i < 2 ? `1px solid ${border}` : 'none',
+                        color: textPri,
+                        fontSize: '0.85rem',
+                        fontFamily: "'DM Sans', sans-serif",
+                        cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px'
+                      }}
                     >
-                      {item.label}
-                      {item.pro && <span className="text-xs bg-indigo-600 text-white px-2 py-0.5 rounded-lg">Pro</span>}
+                      <span>{item.icon} {item.label}</span>
+                      {item.pro && (
+                        <span style={{ fontSize: '0.65rem', background: D.indigo, color: '#fff', borderRadius: '4px', padding: '2px 6px' }}>Pro</span>
+                      )}
                     </button>
                   ))}
                   <label
-                    className={`w-full text-left px-4 py-3 text-sm flex items-center cursor-pointer ${isDark ? 'text-gray-300 border-t border-gray-800' : 'text-gray-700 border-t border-gray-100'}`}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '8px',
+                      padding: '13px 16px',
+                      borderTop: `1px solid ${border}`,
+                      color: textPri,
+                      fontSize: '0.85rem',
+                      fontFamily: "'DM Sans', sans-serif",
+                      cursor: 'pointer'
+                    }}
                   >
-                    📥 Import CSV
-                    <input type="file" accept=".csv" className="hidden" onChange={handleCSVImport} />
+                    ⬆ Import CSV
+                    <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleCSVImport} />
                   </label>
                 </div>
               )}
@@ -574,81 +608,129 @@ async function importFresh(headers, csvRows) {
           </div>
         </div>
 
+        {/* Search bar */}
         {showSearch && (
-          <div className="mt-3 relative">
+          <div style={{ marginTop: '10px', position: 'relative' }}>
             <input
               autoFocus
               type="text"
               placeholder="Search in sheet..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className={`w-full ${inputBg} rounded-xl px-4 py-2.5 pr-10 text-sm outline-none border focus:border-indigo-500`}
+              style={{
+                width: '100%', boxSizing: 'border-box',
+                background: surface3,
+                border: `1px solid ${border}`,
+                borderRadius: '8px',
+                padding: '10px 36px 10px 14px',
+                fontSize: '0.85rem',
+                color: textPri,
+                outline: 'none',
+                fontFamily: "'DM Sans', sans-serif"
+              }}
             />
             {searchQuery.length > 0 && (
               <button
                 onPointerDown={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xl w-6 h-6 flex items-center justify-center"
+                style={{
+                  position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', color: textSec, fontSize: '1.1rem', cursor: 'pointer'
+                }}
               >×</button>
             )}
           </div>
         )}
 
-        <div className="flex items-center justify-between mt-2">
-          <p className={`${subtext} text-xs`}>
+        {/* Row count + sort */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px' }}>
+          <span style={{ fontSize: '0.7rem', color: textSec }}>
             {displayRows.length} {searchQuery ? 'results' : 'rows'}
-            {rows.length >= 100 && <span className="text-yellow-500 ml-2">· 100 row limit</span>}
-          </p>
+            {rows.length >= 100 && <span style={{ color: D.yellow, marginLeft: '6px' }}>· 100 row limit</span>}
+          </span>
           {sortConfig && (
-            <button onPointerDown={() => setSortConfig(null)} className="text-indigo-400 text-xs">
-              Clear sort ×
-            </button>
+            <button
+              onPointerDown={() => setSortConfig(null)}
+              style={{ background: 'none', border: 'none', color: D.indigoBright, fontSize: '0.72rem', cursor: 'pointer' }}
+            >Clear sort ×</button>
           )}
         </div>
       </div>
 
-      {/* Grid — frozen header + scrollable body */}
+      {/* ── Grid */}
       <div
-        className="flex-1 flex flex-col overflow-hidden"
+        style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
         onPointerDown={() => { setShowMoreMenu(false); setRowMenu(null) }}
       >
-
         {/* Frozen header */}
-        <div ref={headerRef} className={`${gridHeaderBg} shrink-0 overflow-x-hidden`}>
-          <table className="border-collapse" style={{ minWidth: '100%', tableLayout: 'fixed' }}>
+        <div ref={headerRef} style={{ background: surface2, flexShrink: 0, overflowX: 'hidden' }}>
+          <table style={{ borderCollapse: 'collapse', minWidth: '100%', tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{ width: '48px', minWidth: '48px' }} />
+              <col style={{ width: '52px', minWidth: '52px' }} />
               {columns.map(col => <col key={col.id} style={{ width: '140px', minWidth: '140px' }} />)}
-              <col style={{ width: '60px', minWidth: '60px' }} />
+              <col style={{ width: '64px', minWidth: '64px' }} />
             </colgroup>
             <thead>
               <tr>
-                <th className={`${subtext} text-xs px-3 py-3 text-left border-b ${cellBorder} ${gridHeaderBg}`}>#</th>
+                <th style={{
+                  padding: '10px 8px', textAlign: 'left',
+                  fontSize: '0.68rem', fontWeight: 600,
+                  color: textSec,
+                  borderBottom: `1px solid ${border}`,
+                  background: surface2
+                }}>#</th>
                 {columns.map((col, colIndex) => (
-                  <th key={col.id} className={`text-xs font-semibold px-4 py-3 text-left border-l border-b ${cellBorder} ${gridHeaderBg}`}>
-                    <div className="flex items-center gap-1">
+                  <th key={col.id} style={{
+                    padding: '10px 14px', textAlign: 'left',
+                    fontSize: '0.72rem', fontWeight: 600,
+                    borderLeft: `1px solid ${border}`,
+                    borderBottom: `1px solid ${border}`,
+                    background: surface2
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <button
                         onPointerDown={() => handleSort(col.id)}
-                        className="flex items-center gap-1 flex-1 text-left truncate"
+                        style={{
+                          background: 'none', border: 'none', padding: 0,
+                          display: 'flex', alignItems: 'center', gap: '4px',
+                          cursor: 'pointer', flex: 1, textAlign: 'left', overflow: 'hidden'
+                        }}
                       >
-                        <span className={`${text} truncate`}>{String.fromCharCode(65 + colIndex)} — {col.name}</span>
-                        <span className={`${subtext} shrink-0`}>
-                          {col.type === 'number' ? '123' : col.type === 'date' ? '📅' : 'Aa'}
+                        <span style={{ color: textPri, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {String.fromCharCode(65 + colIndex)} — {col.name}
+                        </span>
+                        <span style={{ color: textDim, flexShrink: 0, fontSize: '0.65rem' }}>
+                          {col.type === 'number' ? '#' : col.type === 'date' ? '◷' : 'A'}
                         </span>
                         {sortConfig?.colId === col.id && (
-                          <span className="text-indigo-400 shrink-0">{sortConfig.dir === 'asc' ? '↑' : '↓'}</span>
+                          <span style={{ color: D.indigoBright, flexShrink: 0 }}>
+                            {sortConfig.dir === 'asc' ? '↑' : '↓'}
+                          </span>
                         )}
                       </button>
                       <button
                         onPointerDown={() => { setEditingColumn(col); setEditColData({ ...col }) }}
-                        className="text-indigo-500 text-xs px-1 active:opacity-70 shrink-0"
-                      >✏️</button>
+                        style={{
+                          background: 'none', border: 'none',
+                          color: D.indigoBright, fontSize: '0.75rem',
+                          cursor: 'pointer', padding: '2px 4px', flexShrink: 0
+                        }}
+                      >✎</button>
                     </div>
                   </th>
                 ))}
-                <th className={`border-l border-b ${cellBorder} px-3 ${gridHeaderBg}`}>
+                <th style={{
+                  padding: '10px 8px',
+                  borderLeft: `1px solid ${border}`,
+                  borderBottom: `1px solid ${border}`,
+                  background: surface2
+                }}>
                   <button
                     onPointerDown={() => setShowAddColumn(true)}
-                    className="text-indigo-400 text-xs py-2 whitespace-nowrap active:opacity-70"
+                    style={{
+                      background: 'none', border: 'none',
+                      color: D.indigoBright, fontSize: '0.72rem', fontWeight: 600,
+                      cursor: 'pointer', whiteSpace: 'nowrap'
+                    }}
                   >+ Col</button>
                 </th>
               </tr>
@@ -659,56 +741,89 @@ async function importFresh(headers, csvRows) {
         {/* Scrollable body */}
         <div
           ref={bodyRef}
-          className="flex-1 overflow-auto"
+          style={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}
           onScroll={handleBodyScroll}
         >
-          <table className="border-collapse" style={{ minWidth: '100%', tableLayout: 'fixed' }}>
+          <table style={{ borderCollapse: 'collapse', minWidth: '100%', tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{ width: '48px', minWidth: '48px' }} />
+              <col style={{ width: '52px', minWidth: '52px' }} />
               {columns.map(col => <col key={col.id} style={{ width: '140px', minWidth: '140px' }} />)}
-              <col style={{ width: '60px', minWidth: '60px' }} />
+              <col style={{ width: '64px', minWidth: '64px' }} />
             </colgroup>
             <tbody>
               {displayRows.length === 0 && (
                 <tr>
-                  <td colSpan={columns.length + 2} className={`text-center py-20 ${subtext} text-sm`}>
-                    {searchQuery ? 'No results found' : 'No rows yet. Tap + to add data.'}
+                  <td colSpan={columns.length + 2} style={{ textAlign: 'center', padding: '80px 0', color: textSec, fontSize: '0.85rem' }}>
+                    {searchQuery ? 'No results found' : 'No rows yet — tap + to add data'}
                   </td>
                 </tr>
               )}
 
               {displayRows.map((row, index) => (
-                <tr key={row.id} className={`border-b ${cellBorder}`}>
-                  <td className={`${subtext} text-xs px-2 py-3 ${isDark ? 'bg-gray-950' : 'bg-gray-50'} relative sticky left-0 z-10`}>
-                    <div className="flex flex-col items-center gap-1.5">
-                      <span>{index + 1}</span>
+                <tr key={row.id} style={{ borderBottom: `1px solid ${border}` }}>
+                  {/* Row number + actions */}
+                  <td style={{
+                    padding: '8px 4px',
+                    background: surface2,
+                    position: 'sticky', left: 0, zIndex: 10,
+                    borderRight: `1px solid ${border}`
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ fontSize: '0.65rem', color: textDim, fontFamily: "'DM Mono', monospace" }}>
+                        {index + 1}
+                      </span>
                       <button
                         onPointerDown={e => {
                           e.stopPropagation()
                           setRowMenu(rowMenu?.rowId === row.id ? null : { rowId: row.id, index })
                         }}
-                        className={`text-xs w-6 h-6 rounded flex items-center justify-center active:opacity-70 ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-200 text-gray-500'}`}
+                        style={{
+                          width: '24px', height: '24px',
+                          background: surface3,
+                          border: `1px solid ${border}`,
+                          borderRadius: '4px',
+                          color: textSec, fontSize: '0.8rem',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          cursor: 'pointer'
+                        }}
                       >⋮</button>
                     </div>
 
+                    {/* Row menu */}
                     {rowMenu?.rowId === row.id && (
                       <div
-                        className={`absolute left-8 z-50 rounded-xl overflow-hidden shadow-2xl border ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}
-                        style={{ minWidth: '160px', top: index < 3 ? '0' : 'auto', bottom: index < 3 ? 'auto' : '0' }}
+                        style={{
+                          position: 'absolute', left: '52px', zIndex: 50,
+                          background: dark ? D.surface2 : '#fff',
+                          border: `1px solid ${border}`,
+                          borderRadius: '10px',
+                          overflow: 'hidden',
+                          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+                          minWidth: '160px',
+                          top: index < 3 ? '0' : 'auto',
+                          bottom: index < 3 ? 'auto' : '0'
+                        }}
                         onPointerDown={e => e.stopPropagation()}
                       >
                         {[
-                          { label: '↑ Insert Above', action: () => handleInsertRow(row.id, 'above') },
-                          { label: '↓ Insert Below', action: () => handleInsertRow(row.id, 'below') },
-                          { label: '⧉ Duplicate', action: () => { handleDuplicateRow(row.id); setRowMenu(null) } },
-                          { label: '× Delete', action: () => { handleDeleteRow(row.id); setRowMenu(null) }, danger: true },
+                          { label: '↑  Insert Above', action: () => handleInsertRow(row.id, 'above') },
+                          { label: '↓  Insert Below', action: () => handleInsertRow(row.id, 'below') },
+                          { label: '⧉  Duplicate', action: () => { handleDuplicateRow(row.id); setRowMenu(null) } },
+                          { label: '×  Delete Row', action: () => { handleDeleteRow(row.id); setRowMenu(null) }, danger: true },
                         ].map((item, i) => (
                           <button
                             key={i}
                             onPointerDown={item.action}
-                            className={`w-full text-left px-4 py-3 text-sm active:opacity-70 ${
-                              i < 3 ? isDark ? 'border-b border-gray-800' : 'border-b border-gray-100' : ''
-                            } ${item.danger ? 'text-red-400' : isDark ? 'text-gray-300' : 'text-gray-700'}`}
+                            style={{
+                              width: '100%', textAlign: 'left',
+                              padding: '12px 16px',
+                              background: 'none', border: 'none',
+                              borderBottom: i < 3 ? `1px solid ${border}` : 'none',
+                              color: item.danger ? D.red : textPri,
+                              fontSize: '0.82rem',
+                              fontFamily: "'DM Sans', sans-serif",
+                              cursor: 'pointer'
+                            }}
                           >{item.label}</button>
                         ))}
                       </div>
@@ -727,7 +842,7 @@ async function importFresh(headers, csvRows) {
                     />
                   ))}
 
-                  <td className={`border-l ${cellBorder}`} />
+                  <td style={{ borderLeft: `1px solid ${border}` }} />
                 </tr>
               ))}
             </tbody>
@@ -738,15 +853,26 @@ async function importFresh(headers, csvRows) {
       {/* FAB */}
       <button
         onPointerDown={() => setShowAddRow(true)}
-        className="fixed bottom-6 right-6 bg-indigo-600 text-white w-12 h-12 rounded-full text-xl shadow-lg shadow-indigo-900 flex items-center justify-center active:bg-indigo-700 z-40"
+        style={{
+          position: 'fixed', bottom: '24px', right: '24px',
+          width: '52px', height: '52px',
+          background: D.indigo,
+          border: 'none',
+          borderRadius: '50%',
+          color: '#fff',
+          fontSize: '1.5rem',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: `0 4px 24px rgba(99,102,241,0.5)`,
+          cursor: 'pointer',
+          zIndex: 40
+        }}
       >+</button>
 
       {/* Add Row */}
       {showAddRow && (
         <AddRowSheet
           columns={columns}
-          inputBg={inputBg}
-          subtext={subtext}
+          dark={dark}
           onClose={() => setShowAddRow(false)}
           onAdd={handleAddRow}
         />
@@ -768,12 +894,26 @@ async function importFresh(headers, csvRows) {
               setNewColumn({ name: '', type: 'text' })
               setShowAddColumn(false)
             })()}
-            className={`w-full ${inputBg} rounded-xl px-4 py-4 text-base outline-none border focus:border-indigo-500`}
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              background: dark ? D.surface3 : '#f4f4f8',
+              border: `1px solid ${dark ? D.border : '#ddd'}`,
+              borderRadius: '10px', padding: '14px 16px',
+              fontSize: '1rem', color: dark ? D.white : '#111',
+              outline: 'none', fontFamily: "'DM Sans', sans-serif"
+            }}
           />
           <select
             value={newColumn.type}
             onChange={e => setNewColumn({ ...newColumn, type: e.target.value })}
-            className={`w-full ${inputBg} rounded-xl px-4 py-4 text-base outline-none border`}
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              background: dark ? D.surface3 : '#f4f4f8',
+              border: `1px solid ${dark ? D.border : '#ddd'}`,
+              borderRadius: '10px', padding: '14px 16px',
+              fontSize: '1rem', color: dark ? D.white : '#111',
+              outline: 'none', fontFamily: "'DM Sans', sans-serif"
+            }}
           >
             <option value="text">Text</option>
             <option value="number">Number</option>
@@ -787,50 +927,73 @@ async function importFresh(headers, csvRows) {
               setNewColumn({ name: '', type: 'text' })
               setShowAddColumn(false)
             }}
-            className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl text-base active:bg-indigo-700"
+            style={{
+              width: '100%', background: D.indigo, color: '#fff',
+              border: 'none', borderRadius: '12px', padding: '16px',
+              fontSize: '1rem', fontWeight: 600, cursor: 'pointer',
+              fontFamily: "'DM Sans', sans-serif",
+              boxShadow: `0 4px 20px rgba(99,102,241,0.35)`
+            }}
           >Add Column</button>
         </BottomSheet>
       )}
 
       {/* Edit Column */}
       {editingColumn && editColData && (
-        <BottomSheet
-          title="Edit Column"
-          onClose={() => { setEditingColumn(null); setEditColData(null) }}
-        >
+        <BottomSheet title="Edit Column" onClose={() => { setEditingColumn(null); setEditColData(null) }}>
           <input
             autoFocus
             type="text"
             placeholder="Column name"
             value={editColData.name}
             onChange={e => setEditColData({ ...editColData, name: e.target.value })}
-            className={`w-full ${inputBg} rounded-xl px-4 py-4 text-base outline-none border focus:border-indigo-500`}
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              background: dark ? D.surface3 : '#f4f4f8',
+              border: `1px solid ${dark ? D.border : '#ddd'}`,
+              borderRadius: '10px', padding: '14px 16px',
+              fontSize: '1rem', color: dark ? D.white : '#111',
+              outline: 'none', fontFamily: "'DM Sans', sans-serif"
+            }}
           />
           <select
             value={editColData.type}
             onChange={e => setEditColData({ ...editColData, type: e.target.value })}
-            className={`w-full ${inputBg} rounded-xl px-4 py-4 text-base outline-none border`}
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              background: dark ? D.surface3 : '#f4f4f8',
+              border: `1px solid ${dark ? D.border : '#ddd'}`,
+              borderRadius: '10px', padding: '14px 16px',
+              fontSize: '1rem', color: dark ? D.white : '#111',
+              outline: 'none', fontFamily: "'DM Sans', sans-serif"
+            }}
           >
             <option value="text">Text</option>
             <option value="number">Number</option>
             <option value="date">Date</option>
           </select>
-          <button
-            onPointerDown={handleInsertColumnLeft}
-            className={`w-full font-semibold py-3 rounded-xl text-sm active:opacity-70 ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'}`}
-          >← Insert Column Left</button>
-          <button
-            onPointerDown={handleInsertColumnRight}
-            className={`w-full font-semibold py-3 rounded-xl text-sm active:opacity-70 ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'}`}
-          >Insert Column Right →</button>
-          <button
-            onPointerDown={handleUpdateColumn}
-            className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl text-base active:bg-indigo-700"
-          >Save Changes</button>
-          <button
-            onPointerDown={() => handleDeleteColumn(editColData.id)}
-            className="w-full bg-red-950 text-red-400 font-bold py-4 rounded-xl text-base active:bg-red-900"
-          >Delete Column</button>
+          {[
+            { label: '← Insert Column Left', action: handleInsertColumnLeft },
+            { label: 'Insert Column Right →', action: handleInsertColumnRight },
+            { label: 'Save Changes', action: handleUpdateColumn, primary: true },
+            { label: 'Delete Column', action: () => handleDeleteColumn(editColData.id), danger: true },
+          ].map((btn, i) => (
+            <button
+              key={i}
+              onPointerDown={btn.action}
+              style={{
+                width: '100%',
+                background: btn.primary ? D.indigo : btn.danger ? D.redDim : dark ? D.surface3 : '#f4f4f8',
+                color: btn.primary ? '#fff' : btn.danger ? D.red : dark ? D.white60 : '#444',
+                border: btn.danger ? `1px solid rgba(248,113,113,0.2)` : btn.primary ? 'none' : `1px solid ${dark ? D.border : '#ddd'}`,
+                borderRadius: '12px', padding: '14px',
+                fontSize: '0.9rem', fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: "'DM Sans', sans-serif",
+                boxShadow: btn.primary ? `0 4px 20px rgba(99,102,241,0.35)` : 'none'
+              }}
+            >{btn.label}</button>
+          ))}
         </BottomSheet>
       )}
 
@@ -838,9 +1001,38 @@ async function importFresh(headers, csvRows) {
   )
 }
 
-function AddRowSheet({ columns, inputBg, subtext, onClose, onAdd }) {
+// ── Header button component
+function HdrBtn({ dark, children, onPointerDown, title, disabled, active }) {
+  const D = {
+    surface3: '#1e1e24', border: '#2a2a35',
+    white60: 'rgba(248,248,252,0.6)', white30: 'rgba(248,248,252,0.3)',
+    indigo: '#6366f1'
+  }
+  return (
+    <button
+      onPointerDown={disabled ? undefined : onPointerDown}
+      title={title}
+      style={{
+        width: '38px', height: '38px',
+        background: active ? 'rgba(99,102,241,0.15)' : dark ? D.surface3 : '#f4f4f8',
+        border: `1px solid ${active ? 'rgba(99,102,241,0.4)' : dark ? D.border : '#e5e5ea'}`,
+        borderRadius: '8px',
+        color: disabled ? (dark ? D.white30 : '#ccc') : dark ? D.white60 : '#555',
+        fontSize: '1rem',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        flexShrink: 0,
+        opacity: disabled ? 0.4 : 1
+      }}
+    >{children}</button>
+  )
+}
+
+// ── Add Row sheet
+function AddRowSheet({ columns, dark, onClose, onAdd }) {
   const [formData, setFormData] = useState({})
   const firstInputRef = useRef(null)
+  const D = { surface3: '#1e1e24', border: '#2a2a35', white: '#f8f8fc', white60: 'rgba(248,248,252,0.6)', indigo: '#6366f1' }
 
   async function handleSubmit() {
     const hasData = Object.values(formData).some(v => String(v).trim())
@@ -854,23 +1046,38 @@ function AddRowSheet({ columns, inputBg, subtext, onClose, onAdd }) {
     <BottomSheet title="Add Row" onClose={onClose} tall>
       {columns.map((col, index) => (
         <div key={col.id}>
-          <label className={`${subtext} text-sm font-medium block mb-2`}>{col.name}</label>
+          <div style={{ fontSize: '0.78rem', fontWeight: 600, color: dark ? D.white60 : '#666', marginBottom: '6px' }}>
+            {col.name}
+          </div>
           <input
             ref={index === 0 ? firstInputRef : null}
             type={col.type === 'date' ? 'date' : 'text'}
             inputMode={col.type === 'number' ? 'decimal' : 'text'}
-            placeholder={col.type === 'number' ? `Enter ${col.name.toLowerCase()} or =formula` : `Enter ${col.name.toLowerCase()}`}
+            placeholder={col.type === 'number' ? `Enter number or =formula` : `Enter ${col.name.toLowerCase()}`}
             value={formData[col.id] || ''}
             onChange={e => setFormData(prev => ({ ...prev, [col.id]: e.target.value }))}
             autoFocus={index === 0}
-            className={`w-full ${inputBg} rounded-xl px-4 py-4 text-base outline-none border focus:border-indigo-500`}
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              background: dark ? D.surface3 : '#f4f4f8',
+              border: `1px solid ${dark ? D.border : '#ddd'}`,
+              borderRadius: '10px', padding: '14px 16px',
+              fontSize: '1rem', color: dark ? D.white : '#111',
+              outline: 'none', fontFamily: "'DM Sans', sans-serif"
+            }}
           />
         </div>
       ))}
       <button
         onPointerDown={handleSubmit}
-        className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl text-base active:bg-indigo-700"
-      >Add & Next</button>
+        style={{
+          width: '100%', background: D.indigo, color: '#fff',
+          border: 'none', borderRadius: '12px', padding: '16px',
+          fontSize: '1rem', fontWeight: 600, cursor: 'pointer',
+          fontFamily: "'DM Sans', sans-serif",
+          boxShadow: `0 4px 20px rgba(99,102,241,0.35)`
+        }}
+      >Add &amp; Next</button>
     </BottomSheet>
   )
 }
