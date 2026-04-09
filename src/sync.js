@@ -56,13 +56,19 @@ export async function syncToCloud(userId, db) {
 // Pull data from Supabase into local Dexie
 export async function syncFromCloud(userId, db) {
   try {
-    const { data: sheets } = await supabase
+    const { data: sheets, error } = await supabase
       .from('sheets')
       .select('*')
       .eq('user_id', userId)
 
+    // SAFETY — if Supabase returns error or empty, never clear local data
+    if (error) {
+      console.error('Sync error:', error)
+      return false
+    }
     if (!sheets?.length) return false
 
+    // Only clear local data AFTER confirming Supabase has data
     await db.sheets.clear()
     await db.columns.clear()
     await db.rows.clear()
@@ -70,13 +76,13 @@ export async function syncFromCloud(userId, db) {
 
     for (const sheet of sheets) {
       await db.sheets.add({
-          id: parseInt(sheet.id) || sheet.id,
-            name: sheet.name,
-              createdAt: sheet.created_at,
-                updatedAt: sheet.updated_at,
-                  status: sheet.status || 'active',
-                    deletedAt: sheet.deleted_at || null
-                    })
+        id: parseInt(sheet.id) || sheet.id,
+        name: sheet.name,
+        createdAt: sheet.created_at,
+        updatedAt: sheet.updated_at,
+        status: sheet.status || 'active',
+        deletedAt: sheet.deleted_at || null
+      })
 
       const { data: columns } = await supabase
         .from('columns')
@@ -120,10 +126,11 @@ export async function syncFromCloud(userId, db) {
         }
       }
     }
-    console.log('Sync from cloud complete')
+
     return true
   } catch (e) {
-    console.error('Sync from cloud failed:', e)
+    // SAFETY — any unexpected error must never wipe local data
+    console.error('syncFromCloud failed:', e)
     return false
   }
 }
