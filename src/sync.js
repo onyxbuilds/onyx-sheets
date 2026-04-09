@@ -91,68 +91,75 @@ export async function syncFromCloud(userId, db) {
       .select('*')
       .eq('user_id', userId)
 
-    // SAFETY — never clear local data on error or empty response
     if (error) { console.error('Sync error:', error); return false }
     if (!sheets?.length) {
       const localSheets = await db.sheets.toArray()
-      if (localSheets.length > 0) {
-        console.warn('Supabase empty but local data exists — skipping pull')
-        return false
-      }
+      if (localSheets.length > 0) return false
       return false
     }
 
-    // Only clear after confirming Supabase has data
+    const sheetIds = sheets.map(s => s.id)
+
+    // Fetch all data in parallel — one call per table, not per sheet
+    const [
+      { data: columns },
+      { data: rows }
+    ] = await Promise.all([
+      supabase.from('columns').select('*').in('sheet_id', sheetIds),
+      supabase.from('rows').select('*').in('sheet_id', sheetIds)
+    ])
+
+    const rowIds = (rows || []).map(r => r.id)
+
+    // Fetch cells in chunks to avoid URL length limits
+    let cells = []
+    const chunkSize = 100
+    for (let i = 0; i < rowIds.length; i += chunkSize) {
+      const chunk = rowIds.slice(i, i + chunkSize)
+      const { data } = await supabase.from('cells').select('*').in('row_id', chunk)
+      if (data) cells = cells.concat(data)
+    }
+
+    // Clear and repopulate locally
     await db.sheets.clear()
     await db.columns.clear()
     await db.rows.clear()
     await db.cells.clear()
 
-    for (const sheet of sheets) {
-      await db.sheets.add({
-        id: uuidToInt(sheet.id),
-        name: sheet.name,
-        createdAt: sheet.created_at,
-        updatedAt: sheet.updated_at,
-        status: sheet.status || 'active',
-        deletedAt: sheet.deleted_at || null
-      })
+    await db.sheets.bulkAdd(sheets.map(s => ({
+      id: uuidToInt(s.id),
+      name: s.name,
+      createdAt: s.created_at,
+      updatedAt: s.updated_at,
+      status: s.status || 'active',
+      deletedAt: s.deleted_at || null
+    })))
 
-      const { data: columns } = await supabase
-        .from('columns').select('*').eq('sheet_id', sheet.id)
+    if (columns?.length) {
+      await db.columns.bulkAdd(columns.map(c => ({
+        id: uuidToInt(c.id),
+        sheetId: uuidToInt(c.sheet_id),
+        name: c.name,
+        type: c.type,
+        position: c.position
+      })))
+    }
 
-      for (const col of columns || []) {
-        await db.columns.add({
-          id: uuidToInt(col.id),
-          sheetId: uuidToInt(col.sheet_id),
-          name: col.name,
-          type: col.type,
-          position: col.position
-        })
-      }
+    if (rows?.length) {
+      await db.rows.bulkAdd(rows.map(r => ({
+        id: uuidToInt(r.id),
+        sheetId: uuidToInt(r.sheet_id),
+        createdAt: r.created_at
+      })))
+    }
 
-      const { data: rows } = await supabase
-        .from('rows').select('*').eq('sheet_id', sheet.id)
-
-      for (const row of rows || []) {
-        await db.rows.add({
-          id: uuidToInt(row.id),
-          sheetId: uuidToInt(row.sheet_id),
-          createdAt: row.created_at
-        })
-
-        const { data: cells } = await supabase
-          .from('cells').select('*').eq('row_id', row.id)
-
-        for (const cell of cells || []) {
-          await db.cells.add({
-            id: uuidToInt(cell.id),
-            rowId: uuidToInt(cell.row_id),
-            columnId: uuidToInt(cell.column_id),
-            value: cell.value
-          })
-        }
-      }
+    if (cells.length) {
+      await db.cells.bulkAdd(cells.map(c => ({
+        id: uuidToInt(c.id),
+        rowId: uuidToInt(c.row_id),
+        columnId: uuidToInt(c.column_id),
+        value: c.value
+      })))
     }
 
     return true
