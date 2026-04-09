@@ -9,15 +9,17 @@ export async function syncToCloud(userId, db) {
       // Generate a stable UUID from the integer ID
       const sheetUUID = intToUUID(sheet.id)
 
-      await supabase.from('sheets').upsert({
-        id: sheetUUID,
-        user_id: userId,
-        name: sheet.name,
-        created_at: sheet.createdAt,
-        updated_at: sheet.updatedAt,
-        status: sheet.status || 'active',
-        deleted_at: sheet.deletedAt || null
-      })
+      const { error: sheetError } = await supabase.from('sheets').upsert({
+  id: sheetUUID,
+  user_id: userId,
+  name: sheet.name,
+  created_at: sheet.createdAt,
+  updated_at: sheet.updatedAt,
+  status: sheet.status || 'active',
+  deleted_at: sheet.deletedAt || null
+})
+if (sheetError) console.error('Sheet upsert error:', sheetError)
+if (sheetError) alert('Sheet error: ' + JSON.stringify(sheetError))
 
       const columns = await db.columns.where('sheetId').equals(sheet.id).toArray()
       for (const col of columns) {
@@ -54,9 +56,9 @@ export async function syncToCloud(userId, db) {
     console.log('Sync to cloud complete')
   } catch (e) {
     console.error('Sync failed:', e)
-  }
-}
-
+      alert('Sync error: ' + e.message)
+      }
+    }
 // Convert integer ID to stable UUID format
 // This ensures the same integer always maps to the same UUID
 function intToUUID(id) {
