@@ -1,4 +1,5 @@
 // — HOME SCREEN
+import { supabase } from '../supabase'
 import { useState, useEffect, useRef } from 'react'
 import { useTheme } from '../theme'
 import BottomSheet from '../components/BottomSheet'
@@ -197,11 +198,23 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
   }
 
   async function handleManualSync() {
-    if (!user) return
-    setSyncing(true)
-    await syncToCloud(user.id, db)
-    setSyncing(false)
-  }
+      if (!user) return
+        setSyncing(true)
+          const localSheets = await getSheets()
+            const { data: cloudSheets } = await supabase
+                .from('sheets')
+                    .select('id')
+                        .eq('user_id', user.id)
+                          
+                            if (localSheets.length > 0 && (!cloudSheets || cloudSheets.length === 0)) {
+                                // Local has data but cloud is empty — push up
+                                    await syncToCloud(user.id, db)
+                                        setSyncing(false)
+                                            return
+                                              }
+                                                await syncToCloud(user.id, db)
+                                                  setSyncing(false)
+                                                  }
 
   async function handleSignOut() {
     await signOut()
@@ -765,8 +778,6 @@ export default function HomeScreen({ user, onOpenSheet, onUpgrade, isPro }) {
       )}
     </div>
   )
-}
-
 // ── Reusable action button component
 function ActionBtn({ dark, children, onPointerDown, title, danger }) {
   return (
@@ -795,4 +806,5 @@ function ActionBtn({ dark, children, onPointerDown, title, danger }) {
       {children}
     </button>
   )
+}
 }

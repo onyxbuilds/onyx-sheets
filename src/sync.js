@@ -66,7 +66,16 @@ export async function syncFromCloud(userId, db) {
       console.error('Sync error:', error)
       return false
     }
-    if (!sheets?.length) return false
+    if (!sheets?.length) {
+        // Safety check — if Supabase is empty but local DB has data, don't wipe
+          const localSheets = await db.sheets.toArray()
+            if (localSheets.length > 0) {
+                // Push local data to cloud instead of wiping it
+                    console.warn('Supabase empty but local data exists — skipping cloud pull')
+                        return false
+                          }
+                            return false
+                            }
 
     // Only clear local data AFTER confirming Supabase has data
     await db.sheets.clear()
@@ -132,5 +141,5 @@ export async function syncFromCloud(userId, db) {
     // SAFETY — any unexpected error must never wipe local data
     console.error('syncFromCloud failed:', e)
     return false
-  }
+   }
 }
